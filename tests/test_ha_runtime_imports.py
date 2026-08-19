@@ -154,6 +154,36 @@ def test_runtime_accessory_status_maps_standard_flatbed() -> None:
             runtime.DecodedMqttMessage(
                 topic="/phone/maker/AKTEST/notice",
                 variant="cbc",
+                payload={"commandType": 1118, "plateType": 2},
+                command_type=1118,
+            ),
+            runtime.DecodedMqttMessage(
+                topic="/phone/maker/AKTEST/notice",
+                variant="cbc",
+                payload={"commandType": 1153, "attType": 1, "version": ""},
+                command_type=1153,
+            ),
+        )
+    )
+
+    assert status.name == "Standard Flatbed"
+    assert status.attachment_type == 1
+    assert status.plate_type == 2
+    assert status.version == ""
+
+
+def test_runtime_accessory_status_maps_none() -> None:
+    _stub_homeassistant()
+    runtime = _load_module(
+        "custom_components.eufymake_e1.runtime",
+        COMPONENT_DIR / "runtime.py",
+    )
+
+    status = runtime.find_accessory_status(
+        (
+            runtime.DecodedMqttMessage(
+                topic="/phone/maker/AKTEST/notice",
+                variant="cbc",
                 payload={"commandType": 1118, "plateType": 1},
                 command_type=1118,
             ),
@@ -166,7 +196,7 @@ def test_runtime_accessory_status_maps_standard_flatbed() -> None:
         )
     )
 
-    assert status.name == "Standard Flatbed"
+    assert status.name == "None"
     assert status.attachment_type == 2
     assert status.plate_type == 1
     assert status.version == "V1.2.1"

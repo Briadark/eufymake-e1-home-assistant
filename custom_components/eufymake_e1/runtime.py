@@ -29,13 +29,15 @@ ACCESSORY_QUERY_COMMANDS = (
 )
 PLATE_TYPE_NAMES = {
     0: "Mini Flatbed",
-    1: "Standard Flatbed",
+    1: "None",
+    2: "Standard Flatbed",
     3: "Rotary Printing Attachment",
     4: "Roll-to-Film Attachment",
 }
 ATTACHMENT_TYPE_NAMES = {
     0: "Mini Flatbed",
-    2: "Standard Flatbed",
+    1: "Standard Flatbed",
+    2: "None",
     3: "Roll-to-Film Attachment",
     4: "Rotary Printing Attachment",
 }
