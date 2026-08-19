@@ -36,10 +36,15 @@ New-Item -ItemType Junction `
 
 Restart Home Assistant, then add "eufyMake E1" from Devices & services.
 
-For the first test release, setup uses a one-time JSON export from the Windows
-machine where eufyMake Studio is already logged in. This avoids manually typing
-the E1 serial number, user ID, MQTT host, and device secret key into separate
-fields.
+The preferred setup path is now eufyMake account login. Select your account
+region, enter your eufyMake email and password, then select the E1 if more than
+one supported printer is found. The password is used only during setup and is not
+stored in the Home Assistant config entry.
+
+The setup export path remains available as a fallback. It uses a one-time JSON
+export from the Windows machine where eufyMake Studio is already logged in. This
+avoids manually typing the E1 serial number, user ID, MQTT host, and device
+secret key into separate fields.
 
 On the Windows machine, run:
 

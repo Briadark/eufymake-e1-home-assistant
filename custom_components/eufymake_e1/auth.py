@@ -1,0 +1,459 @@
+"""eufyMake cloud authentication helpers."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import secrets
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import unquote
+from urllib.request import Request, urlopen
+
+from .const import CONF_DEVICE_SN, CONF_EMAIL, CONF_FIRMWARE_VERSION
+from .const import CONF_MQTT_HOST, CONF_REGION, CONF_SECRET_KEY, CONF_USER_ID
+
+APP_VERSION = "4.2.2"
+ANKERMAKE_APP_NAME = "anker_make"
+ANKERMAKE_PROD_LOCAL_KEY = "c4a8f67abb862469c51d054339d999f5"
+KEY_EXCHANGE_PATH = "/v3/pc/oauth/key_exchange"
+LOGIN_PATHS = ("/v2/passport/login", "/v2/passport/login_sec")
+DEVICE_LIST_PATH = "/v1/app/query_fdm_list"
+
+REGION_ENDPOINTS = {
+    "us": {
+        "country": "US",
+        "app_domain": "make-app.ankermake.com",
+        "mqtt_host": "make-mqtt.ankermake.com",
+    },
+    "eu": {
+        "country": "NL",
+        "app_domain": "make-app-eu.ankermake.com",
+        "mqtt_host": "make-mqtt-eu.ankermake.com",
+    },
+}
+
+
+class EufyMakeAuthError(Exception):
+    """Raised when cloud authentication or setup discovery fails."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class EufyMakeSession:
+    """Authenticated eufyMake cloud session."""
+
+    region: str
+    app_domain: str
+    mqtt_host: str
+    user_id: str
+    email: str
+    auth_token: str
+    token_expires_at: int | None
+    entry_id: str
+    share_key_hex: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class EufyMakeLoginResult:
+    """Cloud login result plus the selected E1 setup fields."""
+
+    session: EufyMakeSession
+    devices: tuple[dict[str, Any], ...]
+
+
+class EufyMakeCloudAuthClient:
+    """Minimal eufyMake cloud client for Home Assistant setup."""
+
+    def __init__(self, *, region: str, timeout: float = 20) -> None:
+        """Initialize a regional auth client."""
+        if region not in REGION_ENDPOINTS:
+            raise EufyMakeAuthError(f"Unsupported region: {region}")
+        self.region = region
+        self.timeout = timeout
+        self.app_domain = REGION_ENDPOINTS[region]["app_domain"]
+        self.mqtt_host = REGION_ENDPOINTS[region]["mqtt_host"]
+        self.country = REGION_ENDPOINTS[region]["country"]
+
+    def login(self, *, email: str, password: str) -> EufyMakeLoginResult:
+        """Log in and fetch E1 devices needed for MQTT setup."""
+        session_key = _perform_key_exchange(
+            app_domain=self.app_domain,
+            timeout=self.timeout,
+        )
+        login_body = {
+            "ab": self.country,
+            "client_secret_info": {
+                "public_key": session_key.public_key_hex,
+            },
+            "email": email,
+            "enc": 0,
+            "password": _encrypt_password(password, session_key.shared_secret_hex),
+            "time_zone": _timezone_offset_ms(),
+            "transaction": str(int(time.time() * 1000)),
+        }
+        response = self._try_login_paths(login_body, session_key)
+        data = _expect_success(response)
+        if not isinstance(data, dict):
+            raise EufyMakeAuthError("Login response data is not an object")
+
+        auth_token = str(data.get("auth_token") or "")
+        user_id = str(data.get("user_id") or "")
+        if not auth_token or not user_id:
+            raise EufyMakeAuthError("Login response did not include a token and user ID")
+
+        account_email = _response_email(data.get("email"), session_key.shared_secret_hex)
+        session = EufyMakeSession(
+            region=self.region,
+            app_domain=self.app_domain,
+            mqtt_host=self.mqtt_host,
+            user_id=user_id,
+            email=account_email or email,
+            auth_token=auth_token,
+            token_expires_at=_optional_int(data.get("token_expires_at")),
+            entry_id=session_key.entry_id,
+            share_key_hex=session_key.share_key_hex,
+        )
+        devices = tuple(_e1_devices(self.get_devices(session)))
+        if not devices:
+            raise EufyMakeAuthError("No eufyMake E1 devices were found on this account")
+        return EufyMakeLoginResult(session=session, devices=devices)
+
+    def _try_login_paths(
+        self,
+        login_body: dict[str, Any],
+        session_key: _SessionKey,
+    ) -> dict[str, Any]:
+        """Try known password-login endpoints."""
+        errors: list[str] = []
+        for path in LOGIN_PATHS:
+            try:
+                return _post_encrypted(
+                    app_domain=self.app_domain,
+                    path=path,
+                    body=login_body,
+                    entry_id=session_key.entry_id,
+                    share_key_hex=session_key.share_key_hex,
+                    auth_token=None,
+                    user_id=None,
+                    timeout=self.timeout,
+                )
+            except EufyMakeAuthError as err:
+                errors.append(f"{path}: {err}")
+        raise EufyMakeAuthError("; ".join(errors))
+
+    def get_devices(self, session: EufyMakeSession) -> list[dict[str, Any]]:
+        """Fetch all cloud devices for a logged-in session."""
+        response = _post_encrypted(
+            app_domain=session.app_domain,
+            path=DEVICE_LIST_PATH,
+            body={},
+            entry_id=session.entry_id,
+            share_key_hex=session.share_key_hex,
+            auth_token=session.auth_token,
+            user_id=session.user_id,
+            timeout=self.timeout,
+        )
+        data = _expect_success(response)
+        if not isinstance(data, list):
+            raise EufyMakeAuthError("Device list response data is not a list")
+        return [item for item in data if isinstance(item, dict)]
+
+
+@dataclass(frozen=True, kw_only=True)
+class _SessionKey:
+    entry_id: str
+    public_key_hex: str
+    shared_secret_hex: str
+    share_key_hex: str
+
+
+def build_setup_from_login_device(
+    session: EufyMakeSession,
+    device: dict[str, Any],
+) -> dict[str, Any]:
+    """Build Home Assistant config entry data from a logged-in E1 device."""
+    serial_number = str(device.get("station_sn") or "")
+    secret_key = str(device.get("secret_key") or "")
+    if not serial_number or not secret_key:
+        raise EufyMakeAuthError("Selected E1 is missing MQTT credentials")
+    if str(device.get("station_model") or "") != "V8260":
+        raise EufyMakeAuthError("Selected device is not a eufyMake E1")
+
+    data: dict[str, Any] = {
+        CONF_REGION: session.region,
+        CONF_DEVICE_SN: serial_number,
+        CONF_USER_ID: session.user_id,
+        CONF_EMAIL: unquote(session.email),
+        CONF_SECRET_KEY: secret_key,
+        CONF_MQTT_HOST: session.mqtt_host,
+    }
+    if device.get("main_sw_version"):
+        data[CONF_FIRMWARE_VERSION] = str(device["main_sw_version"])
+    return data
+
+
+def _perform_key_exchange(*, app_domain: str, timeout: float) -> _SessionKey:
+    private_key, public_key_hex = _generate_ecdh_key_pair()
+    encrypted_public_key = _aes_cbc_encrypt_with_random_iv(
+        public_key_hex.encode("utf-8"),
+        bytes.fromhex(ANKERMAKE_PROD_LOCAL_KEY),
+    )
+    encrypted_public_key_b64 = base64.b64encode(encrypted_public_key).decode("ascii")
+    entry_id = secrets.token_hex(16)
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    signature = _hmac_sha256_hex(
+        ANKERMAKE_PROD_LOCAL_KEY.encode("utf-8"),
+        f"{timestamp}+{nonce}+{encrypted_public_key_b64}",
+    )
+    response = _post_plain(
+        app_domain=app_domain,
+        path=KEY_EXCHANGE_PATH,
+        body={"client_public_key": encrypted_public_key_b64},
+        headers={
+            "content-type": "application/json",
+            "Model-Type": "WEB",
+            "App_name": ANKERMAKE_APP_NAME,
+            "X-Key-Ident": entry_id,
+            "X-Request-Ts": timestamp,
+            "X-Request-Once": nonce,
+            "X-Signature": signature,
+            "X-Encryption-Info": "algo_ecdh",
+        },
+        timeout=timeout,
+    )
+    data = _expect_success(response)
+    if not isinstance(data, dict) or not data.get("server_public_key"):
+        raise EufyMakeAuthError("Key exchange response is missing server public key")
+    server_public_key = _aes_cbc_decrypt_with_prepended_iv(
+        base64.b64decode(str(data["server_public_key"])),
+        bytes.fromhex(ANKERMAKE_PROD_LOCAL_KEY),
+    ).decode("utf-8")
+    shared_secret = private_key.exchange(
+        _ecdh_algorithm(),
+        _public_key_from_hex(server_public_key),
+    )
+    shared_secret_hex = shared_secret.hex().rjust(64, "0")
+    return _SessionKey(
+        entry_id=entry_id,
+        public_key_hex=public_key_hex,
+        shared_secret_hex=shared_secret_hex,
+        share_key_hex=shared_secret_hex[:32],
+    )
+
+
+def _post_encrypted(
+    *,
+    app_domain: str,
+    path: str,
+    body: dict[str, Any],
+    entry_id: str,
+    share_key_hex: str,
+    auth_token: str | None,
+    user_id: str | None,
+    timeout: float,
+) -> dict[str, Any]:
+    key = bytes.fromhex(share_key_hex)
+    encoded_body = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    encrypted_body = _aes_cbc_encrypt_with_random_iv(encoded_body, key)
+    encrypted_body_b64 = base64.b64encode(encrypted_body).decode("ascii")
+    timestamp = str(int(time.time()))
+    nonce = secrets.token_hex(16)
+    headers = {
+        "content-type": "application/json",
+        "App-name": ANKERMAKE_APP_NAME,
+        "App-version": APP_VERSION,
+        "Model-type": "PC",
+        "Language": "en",
+        "Accept": "application/json",
+        "User-Agent": f"eufyMake Studio/{APP_VERSION}",
+        "X-Key-Ident": entry_id,
+        "X-Request-Ts": timestamp,
+        "X-Request-Once": nonce,
+        "X-Signature": _hmac_sha256_hex(
+            share_key_hex.encode("utf-8"),
+            f"{timestamp}+{nonce}+{encrypted_body_b64}",
+        ),
+        "X-Encryption-Info": "algo_ecdh",
+        "X-Replay-Info": "replay",
+    }
+    if auth_token:
+        headers["X-Auth-Token"] = auth_token
+        headers["Gtoken"] = hashlib.md5((user_id or "").encode()).hexdigest()
+
+    response = _post_plain(
+        app_domain=app_domain,
+        path=path,
+        body_text=encrypted_body_b64,
+        headers=headers,
+        timeout=timeout,
+    )
+    data = response.get("data")
+    if isinstance(data, str):
+        decrypted = _aes_cbc_decrypt_with_prepended_iv(base64.b64decode(data), key)
+        try:
+            response["data"] = json.loads(decrypted.decode("utf-8").rstrip("\x00"))
+        except json.JSONDecodeError as err:
+            raise EufyMakeAuthError("Encrypted response data is not JSON") from err
+    return response
+
+
+def _post_plain(
+    *,
+    app_domain: str,
+    path: str,
+    headers: dict[str, str],
+    timeout: float,
+    body: dict[str, Any] | None = None,
+    body_text: str | None = None,
+) -> dict[str, Any]:
+    if body_text is None:
+        body_text = json.dumps(body or {}, separators=(",", ":"))
+    request = Request(
+        f"https://{app_domain}{path}",
+        data=body_text.encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            raw = response.read()
+    except HTTPError as err:
+        decoded_error = _decode_body(err.read())
+        raise EufyMakeAuthError(
+            f"HTTP {err.code} from {path}: {decoded_error!r}"
+        ) from err
+    except URLError as err:
+        raise EufyMakeAuthError(f"Request to {path} failed: {err.reason}") from err
+    decoded = _decode_body(raw)
+    if not isinstance(decoded, dict):
+        raise EufyMakeAuthError(f"Unexpected response from {path}: {decoded!r}")
+    return decoded
+
+
+def _expect_success(response: dict[str, Any]) -> Any:
+    if response.get("code") in (0, 200):
+        return response.get("data")
+    raise EufyMakeAuthError(
+        f"API error: code={response.get('code')} msg={response.get('msg')}"
+    )
+
+
+def _decode_body(value: bytes) -> dict[str, Any] | str | None:
+    if not value:
+        return None
+    text = value.decode("utf-8", errors="replace")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text[:500]
+
+
+def _e1_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        device
+        for device in devices
+        if str(device.get("station_model") or "") == "V8260"
+    ]
+
+
+def _response_email(value: Any, shared_secret_hex: str) -> str | None:
+    if not value:
+        return None
+    text = str(value)
+    try:
+        return _aes_cbc_decrypt(
+            base64.b64decode(text),
+            bytes.fromhex(shared_secret_hex),
+            bytes.fromhex(shared_secret_hex)[:16],
+        ).decode("utf-8").rstrip("\x00")
+    except Exception:
+        return unquote(text)
+
+
+def _encrypt_password(password: str, shared_secret_hex: str) -> str:
+    key = bytes.fromhex(shared_secret_hex)
+    ciphertext = _aes_cbc_encrypt(password.encode("utf-8"), key, key[:16])
+    return base64.b64encode(ciphertext).decode("ascii")
+
+
+def _aes_cbc_encrypt_with_random_iv(plaintext: bytes, key: bytes) -> bytes:
+    iv = secrets.token_bytes(16)
+    return iv + _aes_cbc_encrypt(plaintext, key, iv)
+
+
+def _aes_cbc_decrypt_with_prepended_iv(ciphertext: bytes, key: bytes) -> bytes:
+    if len(ciphertext) < 32 or len(ciphertext) % 16 != 0:
+        raise EufyMakeAuthError("Invalid AES-CBC payload")
+    return _aes_cbc_decrypt(ciphertext[16:], key, ciphertext[:16])
+
+
+def _aes_cbc_encrypt(plaintext: bytes, key: bytes, iv: bytes) -> bytes:
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(plaintext) + padder.finalize()
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+    return encryptor.update(padded) + encryptor.finalize()
+
+
+def _aes_cbc_decrypt(ciphertext: bytes, key: bytes, iv: bytes) -> bytes:
+    from cryptography.hazmat.primitives import padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+    decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return unpadder.update(padded) + unpadder.finalize()
+
+
+def _hmac_sha256_hex(key: bytes, message: str) -> str:
+    return hmac.new(key, message.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _generate_ecdh_key_pair() -> tuple[Any, str]:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    public_bytes = private_key.public_key().public_bytes(
+        Encoding.X962,
+        PublicFormat.UncompressedPoint,
+    )
+    return private_key, public_bytes.hex()
+
+
+def _public_key_from_hex(value: str) -> Any:
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    return ec.EllipticCurvePublicKey.from_encoded_point(
+        ec.SECP256R1(),
+        bytes.fromhex(value),
+    )
+
+
+def _ecdh_algorithm() -> Any:
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    return ec.ECDH()
+
+
+def _timezone_offset_ms() -> int:
+    offset = datetime.now().astimezone().utcoffset()
+    seconds = int(offset.total_seconds()) if offset else 0
+    if seconds == 0:
+        return 0
+    return seconds * 1000
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
