@@ -1,6 +1,6 @@
 # eufyMake E1 for Home Assistant
 
-[![Open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Briadark&repository=eufymake-e1-home-assistant&category=integration)
+[![Open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Briadark&repository=eufymake-home-assistant&category=integration)
 
 Custom Home Assistant integration for the eufyMake E1 UV printer.
 
