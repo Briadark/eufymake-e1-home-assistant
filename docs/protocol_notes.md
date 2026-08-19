@@ -72,7 +72,8 @@ user details into this file.
 ## MQTT Frame Format
 
 - Two MQTT wire variants were investigated during discovery. The integration
-  should keep the fallback parser until more app/account versions are tested.
+  should keep accepting both response shapes until more app/account versions
+  are tested.
 - Variant A: AES-256-CBC encrypted JSON in an `MA` binary frame. The AES key is
   the E1 `secret_key` from `device_list.json`, decoded from hex. IV is the
   fixed ASCII value `3DPrintAnkerMake`. Frames use a little-endian total size,

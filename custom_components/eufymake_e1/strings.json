@@ -2,22 +2,15 @@
   "title": "eufyMake E1",
   "config": {
     "step": {
-      "user": {
-        "title": "Connect eufyMake E1",
-        "menu_options": {
-          "login": "Log in with eufyMake account",
-          "setup_export": "Paste setup export JSON"
-        }
-      },
       "login": {
         "title": "Log in to eufyMake",
         "data": {
-          "country": "Country code",
+          "country": "Country",
           "email": "Email",
           "password": "Password"
         },
         "data_description": {
-          "country": "Use the two-letter country code selected during eufyMake login, for example NL."
+          "country": "Select the country used by your eufyMake account."
         }
       },
       "device": {
@@ -32,15 +25,6 @@
         "data": {
           "captcha_answer": "Captcha"
         }
-      },
-      "setup_export": {
-        "title": "Connect eufyMake E1 from setup export",
-        "data": {
-          "setup_export": "Setup export JSON"
-        },
-        "data_description": {
-          "setup_export": "Fallback option: from the repository folder on the Windows machine where eufyMake Studio is already logged in, run tools/export_home_assistant_setup.py, then paste the JSON here."
-        }
       }
     },
     "abort": {
@@ -50,12 +34,11 @@
       "login_required": "Log in before selecting a device."
     },
     "error": {
-      "cannot_connect": "Could not connect to eufyMake. Check the country code and try again.",
+      "cannot_connect": "Could not connect to eufyMake. Check the selected country and try again.",
       "captcha_required": "Captcha verification failed. Try the new image.",
       "invalid_auth": "The eufyMake login details were rejected.",
-      "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1.",
       "rate_limited": "eufyMake temporarily rate-limited login attempts. Stop retrying for now and try again later.",
-      "verification_required": "eufyMake requested email verification. Use the setup export fallback for now."
+      "verification_required": "eufyMake requested email verification. Complete verification in the eufyMake app, then try again."
     }
   },
   "entity": {

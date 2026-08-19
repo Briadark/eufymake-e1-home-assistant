@@ -166,7 +166,7 @@ def build_probe_plan(
     secret_key: str,
     firmware_version: str | None,
 ) -> MqttProbePlan:
-    """Build a live MQTT probe plan from a setup export config entry."""
+    """Build a live MQTT probe plan from a Home Assistant config entry."""
     device = Device(
         serial_number=station_sn,
         secret_key=secret_key,

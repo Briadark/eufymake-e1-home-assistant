@@ -15,7 +15,6 @@ CONF_MAKE_IT_REAL_DOMAIN = "make_it_real_domain"
 CONF_MQTT_HOST = "mqtt_host"
 CONF_PASSWORD = "password"
 CONF_SECRET_KEY = "secret_key"
-CONF_SETUP_EXPORT = "setup_export"
 CONF_USER_ID = "user_id"
 
 REGION_US = "us"

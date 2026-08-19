@@ -1,151 +1,60 @@
-# eufyMake E1 Home Assistant Integration
+# eufyMake E1 for Home Assistant
 
-Experimental Home Assistant custom integration for the eufyMake E1 UV printer.
+[![Open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Briadark&repository=eufymake-e1-home-assistant&category=integration)
 
-The current first milestone is discovery and read-only status. The integration
-uses the eufyMake cloud MQTT path for live E1 status:
+Custom Home Assistant integration for the eufyMake E1 UV printer.
 
-- API hosts include `make-app*.ankermake.com` and `aiot-api*.mkitreal.com`.
-- MQTT brokers include `make-mqtt.ankermake.com` and EU variants.
-- E1 devices are station model `V8260`; `V8111` is an AnkerMake M5 3D printer
-  and is intentionally out of scope.
-- The app contains E1-oriented commands for status, ink state, print status,
-  firmware, white ink cycle, zero calibration, snapshots, and file transfer.
+This integration is experimental and read-only. It connects through the
+eufyMake cloud MQTT path and exposes printer status as Home Assistant sensors.
 
-Do not commit real device cache exports, tokens, DSK keys, serials, or licenses.
+## Features
 
-## Home Assistant UI Setup
+- Setup from the Home Assistant integrations UI.
+- eufyMake account login with country dropdown, email, password, and captcha
+  support.
+- Sensors for availability, firmware, connectivity, ink levels, ink expiration,
+  and waste ink.
+- Bundled MQTT certificate, so no certificate file from the Windows app is
+  needed.
 
-This custom integration is built to appear in Settings -> Devices & services.
-That requires `config_flow.py` and `"config_flow": true` in `manifest.json`.
+## Compatibility
 
-For a manual test install, copy `custom_components/eufymake_e1` into your Home
-Assistant config directory:
+Supported:
 
-```text
-<config>/custom_components/eufymake_e1
-```
+- eufyMake E1, station model `V8260`
 
-For local development on Windows, a junction is easier:
+Not supported:
 
-```powershell
-New-Item -ItemType Junction `
-  -Path "C:\path\to\homeassistant\config\custom_components\eufymake_e1" `
-  -Target "C:\VSCode\eufymake-e1-home-assistant\custom_components\eufymake_e1"
-```
+- AnkerMake M5 / eufyMake Studio 3D printer, station model `V8111`
 
-Restart Home Assistant, then add "eufyMake E1" from Devices & services.
+## Install With HACS
 
-The preferred setup path is eufyMake account login. Enter the two-letter country
-code used by your eufyMake account, your eufyMake email, and password, then
-select the E1 if more than one supported printer is found. The password is used
-only during setup and is not stored in the Home Assistant config entry.
+1. Make sure HACS is installed in Home Assistant.
+2. Click the HACS button above.
+3. Add this repository as an `Integration`.
+4. Download `eufyMake E1`.
+5. Restart Home Assistant.
+6. Go to Settings -> Devices & services -> Add integration.
+7. Search for `eufyMake E1`.
 
-The integration maps the country code to the global EU or US production backend.
-Other regions and test environments may exist in eufyMake Studio, but they are
-not enabled here until they can be verified with an E1 setup.
+## Setup
 
-The setup export path remains available as a fallback. It uses a one-time JSON
-export from the Windows machine where eufyMake Studio is already logged in. This
-avoids manually typing the E1 serial number, user ID, MQTT host, and device
-secret key into separate fields.
+Enter your eufyMake account details:
 
-From this repository folder on the Windows machine, run:
+- Country
+- Email
+- Password
 
-```powershell
-py .\tools\export_home_assistant_setup.py
-```
+If eufyMake asks for captcha verification, Home Assistant shows the captcha
+image and asks for the answer before continuing.
 
-Then paste the printed JSON into the Home Assistant setup form. Treat that JSON
-as private because it contains the E1 MQTT credentials.
+Your password is used only during setup and is not stored in the Home Assistant
+config entry.
 
-If eufyMake requests captcha verification during account login, Home Assistant
-shows the captcha image and asks for the answer before continuing setup.
+## Notes
 
-For debugging account login from this repository without printing secrets, run:
+This project is not affiliated with eufyMake, AnkerMake, or Anker.
 
-```powershell
-py .\tools\probe_account_login.py
-```
-
-The MQTT broker uses a private AnkerMake/eufyMake certificate. The integration
-bundles the required trust anchor so Home Assistant does not need access to the
-Windows app certificate file.
-
-## Protocol Notes
-
-The integration shell is intentionally read-only until the protocol is proven.
-The likely architecture is:
-
-1. Python client library authenticates against eufyMake/AnkerMake cloud.
-2. Client fetches device list and DSK/P2P material.
-3. Client subscribes to MQTT topics for status and command replies.
-4. Home Assistant coordinator exposes sensors and later safe services.
-
-The config flow accepts a setup export for now. The target setup experience is
-region plus eufyMake account login, followed by E1 device selection.
-
-Known topic patterns from the Windows app:
-
-- `/phone/maker/<station_sn>/notice`
-- `/phone/maker/<station_sn>/command/reply`
-- `/phone/maker/<station_sn>/query/reply`
-- `/phone/maker/<station_sn>/change_notice`
-- `/phone/user/<user_id>/change_notice`
-- `/device/maker/<station_sn>/command`
-- `/device/maker/<station_sn>/query`
-
-MQTT payloads are encrypted E1 frames. The client currently uses the CBC `MA`
-frame variant verified against an E1 on the EU broker. It also has an offline
-parser for decrypted `commandType: 1100` ink and waste-tank status messages.
-
-Known command names include `command_get_print_status`,
-`command_get_device_info`, `command_get_device_key`, `command_print`,
-`command_print_pause`, `command_print_resume`, `command_print_stop`,
-`command_zero_calibration`, and `command_take_photo`.
-
-## Cache Inspection
-
-Use the summary helper for a safe high-level view of the local eufyMake Studio
-cache:
-
-```powershell
-python .\tools\summarize_eufymake_cache.py
-```
-
-Use the lower-level helper to inspect cache structure without printing
-secret-looking values:
-
-```powershell
-python .\tools\inspect_eufymake_cache.py
-```
-
-Prepare the cached inputs for a future MQTT probe without connecting to the
-broker:
-
-```powershell
-python .\tools\prepare_mqtt_probe.py
-```
-
-Decode a saved MQTT payload capture offline:
-
-```powershell
-python .\tools\decode_mqtt_payload.py .\capture.bin
-```
-
-Experimental live MQTT status probe dependencies are intentionally separate from
-the Home Assistant scaffold:
-
-```powershell
-python -m pip install -r .\requirements-discovery.txt
-python .\tools\live_mqtt_status_probe.py
-```
-
-The default cache path is:
-
-`%APPDATA%\eufyMake Studio Profile\cache\offline\device_info`
-
-More project notes:
-
-- [Protocol notes](docs/protocol_notes.md)
-- [Development plan](docs/development_plan.md)
+Do not share Home Assistant diagnostics, logs, or local cache exports publicly
+unless you have checked that they do not contain tokens, serial numbers, or
+device keys.

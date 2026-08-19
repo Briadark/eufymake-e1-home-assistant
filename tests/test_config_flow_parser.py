@@ -47,9 +47,20 @@ def load_config_flow_module():
         def __init__(self, config):
             self.config = config
 
+    class SelectSelector:
+        def __init__(self, config):
+            self.config = config
+
     class TextSelectorConfig:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+
+    class SelectSelectorConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class SelectSelectorMode:
+        DROPDOWN = "dropdown"
 
     class TextSelectorType:
         EMAIL = "email"
@@ -64,7 +75,6 @@ def load_config_flow_module():
     const.CONF_EMAIL = "email"
     const.CONF_PASSWORD = "password"
     const.CONF_REGION = "region"
-    const.CONF_SETUP_EXPORT = "setup_export"
     const.DOMAIN = "eufymake_e1"
     const.REGION_EU = "eu"
     const.REGION_OPTIONS = ["us", "eu"]
@@ -74,6 +84,9 @@ def load_config_flow_module():
     selector.TextSelector = TextSelector
     selector.TextSelectorConfig = TextSelectorConfig
     selector.TextSelectorType = TextSelectorType
+    selector.SelectSelector = SelectSelector
+    selector.SelectSelectorConfig = SelectSelectorConfig
+    selector.SelectSelectorMode = SelectSelectorMode
     voluptuous.All = all_validator
     voluptuous.In = In
     voluptuous.Length = Length
@@ -82,6 +95,10 @@ def load_config_flow_module():
     sys.modules["custom_components"] = custom_components
     sys.modules["custom_components.eufymake_e1"] = package
     sys.modules["custom_components.eufymake_e1.const"] = const
+    sys.modules["custom_components.eufymake_e1.countries"] = _load_module(
+        "custom_components.eufymake_e1.countries",
+        CONFIG_FLOW.parent / "countries.py",
+    )
     sys.modules["homeassistant"] = homeassistant
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.helpers"] = helpers
@@ -99,53 +116,6 @@ def load_config_flow_module():
     return module
 
 
-def test_parse_setup_export_inline() -> None:
-    module = load_config_flow_module()
-
-    parsed = module._parse_setup_export(
-        """
-        {
-          "version": 1,
-          "region": "eu",
-          "device_sn": "AKTESTE100000001",
-          "user_id": "fixture-user",
-          "email": "fixture@example.com",
-          "secret_key": "fixture-secret-key",
-          "mqtt_host": "make-mqtt-eu.ankermake.com",
-          "station_model": "V8260",
-          "firmware_version": "4.0.2"
-        }
-        """
-    )
-
-    assert parsed["device_sn"] == "AKTESTE100000001"
-    assert parsed["region"] == "eu"
-    assert parsed["firmware_version"] == "4.0.2"
-
-
-def test_parse_setup_export_rejects_m5() -> None:
-    module = load_config_flow_module()
-
-    try:
-        module._parse_setup_export(
-            """
-            {
-              "version": 1,
-              "device_sn": "AKTESTM500000001",
-              "user_id": "fixture-user",
-              "email": "fixture@example.com",
-              "secret_key": "fixture-secret-key",
-              "mqtt_host": "make-mqtt-eu.ankermake.com",
-              "station_model": "V8111"
-            }
-            """
-        )
-    except ValueError:
-        return
-
-    raise AssertionError("Expected M5 setup export to be rejected")
-
-
 def test_device_label_includes_suffix_and_firmware() -> None:
     module = load_config_flow_module()
 
@@ -158,6 +128,17 @@ def test_device_label_includes_suffix_and_firmware() -> None:
     )
 
     assert label == "eufyMake E1 0001 (4.0.2)"
+
+
+def test_country_options_include_default_country() -> None:
+    module = load_config_flow_module()
+
+    countries = {
+        option["value"]: option["label"]
+        for option in module.COUNTRY_OPTIONS
+    }
+
+    assert countries["NL"] == "Netherlands"
 
 
 def test_captcha_image_uri_converts_base64_png() -> None:
@@ -174,3 +155,13 @@ def test_captcha_image_uri_preserves_data_uri() -> None:
     assert module._captcha_image_uri("data:image/png;base64,abc") == (
         "data:image/png;base64,abc"
     )
+
+
+def _load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module

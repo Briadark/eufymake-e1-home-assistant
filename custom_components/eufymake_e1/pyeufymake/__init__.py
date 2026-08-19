@@ -36,12 +36,6 @@ from .mqtt_protocol import (
 )
 from .profile import CachedLogin, EufyMakeProfileCacheStore
 from .redaction import redact
-from .setup_export import (
-    EXPORT_VERSION,
-    EufyMakeSetupExportError,
-    build_setup_export,
-    parse_setup_export,
-)
 
 __all__ = [
     "API_PATHS",
@@ -60,8 +54,6 @@ __all__ = [
     "EufyMakeMqttProtocolError",
     "EufyMakeMqttStatusClient",
     "EufyMakeProfileCacheStore",
-    "EufyMakeSetupExportError",
-    "EXPORT_VERSION",
     "InkChannel",
     "InkStatus",
     "MakerPart",
@@ -75,13 +67,11 @@ __all__ = [
     "build_gcm_payload",
     "build_status_query",
     "build_topics",
-    "build_setup_export",
     "find_ink_status",
     "iter_status_messages",
     "parse_frame",
     "parse_gcm_payload",
     "parse_ink_status",
-    "parse_setup_export",
     "redact",
     "resolve_mqtt_host",
 ]
