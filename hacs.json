@@ -1,7 +1,5 @@
 {
   "name": "eufyMake E1",
   "domains": ["sensor"],
-  "filename": "eufymake_e1.zip",
-  "zip_release": true,
   "render_readme": true
 }
