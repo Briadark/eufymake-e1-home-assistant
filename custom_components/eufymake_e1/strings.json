@@ -44,8 +44,11 @@
     },
     "error": {
       "cannot_connect": "Could not connect to eufyMake. Check the region and try again.",
+      "captcha_required": "eufyMake requested captcha verification. Use the setup export fallback for now.",
       "invalid_auth": "The eufyMake login details were rejected.",
-      "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1."
+      "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1.",
+      "rate_limited": "eufyMake temporarily rate-limited login attempts. Try again later.",
+      "verification_required": "eufyMake requested email verification. Use the setup export fallback for now."
     }
   },
   "entity": {

@@ -9,7 +9,11 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.helpers import selector
+from homeassistant.helpers.selector import (
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .const import (
     CONF_DEVICE_SN,
@@ -25,11 +29,17 @@ from .const import (
 _STEP_LOGIN_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_REGION, default=REGION_EU): vol.In(REGION_OPTIONS),
-        vol.Required(CONF_EMAIL): selector.TextSelector(
-            selector.TextSelectorConfig(type=selector.TextSelectorType.EMAIL)
+        vol.Required(CONF_EMAIL): TextSelector(
+            TextSelectorConfig(
+                type=TextSelectorType.EMAIL,
+                autocomplete="username",
+            )
         ),
-        vol.Required(CONF_PASSWORD): selector.TextSelector(
-            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        vol.Required(CONF_PASSWORD): TextSelector(
+            TextSelectorConfig(
+                type=TextSelectorType.PASSWORD,
+                autocomplete="current-password",
+            )
         ),
     }
 )
@@ -166,13 +176,23 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 def _login(*, region: str, email: str, password: str) -> Any:
     """Run eufyMake cloud login without importing auth at module import time."""
-    from .auth import EufyMakeAuthError, EufyMakeCloudAuthClient
+    from .auth import EufyMakeApiCodeError, EufyMakeAuthError, EufyMakeCloudAuthClient
 
     try:
         return EufyMakeCloudAuthClient(region=region).login(
             email=email,
             password=password,
         )
+    except EufyMakeApiCodeError as err:
+        if err.code in (26050, 26051, 26054, 26055, 26108, 22008):
+            raise ValueError("invalid_auth") from err
+        if err.code in (26052, 26105):
+            raise ValueError("verification_required") from err
+        if err.code in (100032, 100033):
+            raise ValueError("captcha_required") from err
+        if err.code in (10019, 100028, 100056, 250999):
+            raise ValueError("rate_limited") from err
+        raise ValueError("cannot_connect") from err
     except EufyMakeAuthError as err:
         message = str(err)
         if "code=100006" in message or "password" in message.lower():

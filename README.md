@@ -41,6 +41,10 @@ region, enter your eufyMake email and password, then select the E1 if more than
 one supported printer is found. The password is used only during setup and is not
 stored in the Home Assistant config entry.
 
+Only the global EU and US production regions are exposed. Other regions and
+test environments may exist in eufyMake Studio, but they are not enabled here
+until they can be verified with an E1 setup.
+
 The setup export path remains available as a fallback. It uses a one-time JSON
 export from the Windows machine where eufyMake Studio is already logged in. This
 avoids manually typing the E1 serial number, user ID, MQTT host, and device
@@ -54,6 +58,12 @@ py .\tools\export_home_assistant_setup.py
 
 Then paste the printed JSON into the Home Assistant setup form. Treat that JSON
 as private because it contains the E1 MQTT credentials.
+
+For debugging account login from this repository without printing secrets, run:
+
+```powershell
+py .\tools\probe_account_login.py
+```
 
 The MQTT broker uses a private AnkerMake/eufyMake certificate. The integration
 bundles the required trust anchor so Home Assistant does not need access to the

@@ -21,6 +21,10 @@ from .const import CONF_MQTT_HOST, CONF_REGION, CONF_SECRET_KEY, CONF_USER_ID
 APP_VERSION = "4.2.2"
 ANKERMAKE_APP_NAME = "anker_make"
 ANKERMAKE_PROD_LOCAL_KEY = "c4a8f67abb862469c51d054339d999f5"
+PASSPORT_SERVER_PUBLIC_KEY = (
+    "04c5c00c4f8d1197cc7c3167c52bf7acb054d722f0ef08dcd7e0883236e0d72a38"
+    "68d9750cb47fa4619248f3d83f0f662671dadc6e2d31c2f41db0161651c7c076"
+)
 KEY_EXCHANGE_PATH = "/v3/pc/oauth/key_exchange"
 LOGIN_PATHS = ("/v2/passport/login", "/v2/passport/login_sec")
 DEVICE_LIST_PATH = "/v1/app/query_fdm_list"
@@ -41,6 +45,17 @@ REGION_ENDPOINTS = {
 
 class EufyMakeAuthError(Exception):
     """Raised when cloud authentication or setup discovery fails."""
+
+
+class EufyMakeApiCodeError(EufyMakeAuthError):
+    """Raised when eufyMake returns a non-success business code."""
+
+    def __init__(self, code: int | None, message: Any, data: Any = None) -> None:
+        """Initialize the API code error."""
+        self.code = code
+        self.message = str(message or "")
+        self.data = data
+        super().__init__(f"API error: code={code} msg={self.message}")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,7 +107,7 @@ class EufyMakeCloudAuthClient:
             },
             "email": email,
             "enc": 0,
-            "password": _encrypt_password(password, session_key.shared_secret_hex),
+            "password": _encrypt_password(password, session_key.private_key),
             "time_zone": _timezone_offset_ms(),
             "transaction": str(int(time.time() * 1000)),
         }
@@ -106,7 +121,7 @@ class EufyMakeCloudAuthClient:
         if not auth_token or not user_id:
             raise EufyMakeAuthError("Login response did not include a token and user ID")
 
-        account_email = _response_email(data.get("email"), session_key.shared_secret_hex)
+        account_email = _response_email(data.get("email"), data, session_key.private_key)
         session = EufyMakeSession(
             region=self.region,
             app_domain=self.app_domain,
@@ -142,6 +157,8 @@ class EufyMakeCloudAuthClient:
                     user_id=None,
                     timeout=self.timeout,
                 )
+            except EufyMakeApiCodeError:
+                raise
             except EufyMakeAuthError as err:
                 errors.append(f"{path}: {err}")
         raise EufyMakeAuthError("; ".join(errors))
@@ -167,6 +184,7 @@ class EufyMakeCloudAuthClient:
 @dataclass(frozen=True, kw_only=True)
 class _SessionKey:
     entry_id: str
+    private_key: Any
     public_key_hex: str
     shared_secret_hex: str
     share_key_hex: str
@@ -241,6 +259,7 @@ def _perform_key_exchange(*, app_domain: str, timeout: float) -> _SessionKey:
     shared_secret_hex = shared_secret.hex().rjust(64, "0")
     return _SessionKey(
         entry_id=entry_id,
+        private_key=private_key,
         public_key_hex=public_key_hex,
         shared_secret_hex=shared_secret_hex,
         share_key_hex=shared_secret_hex[:32],
@@ -339,8 +358,10 @@ def _post_plain(
 def _expect_success(response: dict[str, Any]) -> Any:
     if response.get("code") in (0, 200):
         return response.get("data")
-    raise EufyMakeAuthError(
-        f"API error: code={response.get('code')} msg={response.get('msg')}"
+    raise EufyMakeApiCodeError(
+        _optional_int(response.get("code")),
+        response.get("msg"),
+        response.get("data"),
     )
 
 
@@ -362,23 +383,36 @@ def _e1_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _response_email(value: Any, shared_secret_hex: str) -> str | None:
+def _response_email(
+    value: Any,
+    login_data: dict[str, Any],
+    private_key: Any,
+) -> str | None:
     if not value:
         return None
     text = str(value)
     try:
+        server_secret_info = login_data.get("server_secret_info")
+        if isinstance(server_secret_info, dict) and server_secret_info.get("public_key"):
+            public_key_hex = str(server_secret_info["public_key"])
+        else:
+            public_key_hex = PASSPORT_SERVER_PUBLIC_KEY
+        secret = private_key.exchange(_ecdh_algorithm(), _public_key_from_hex(public_key_hex))
         return _aes_cbc_decrypt(
             base64.b64decode(text),
-            bytes.fromhex(shared_secret_hex),
-            bytes.fromhex(shared_secret_hex)[:16],
+            secret,
+            secret[:16],
         ).decode("utf-8").rstrip("\x00")
     except Exception:
         return unquote(text)
 
 
-def _encrypt_password(password: str, shared_secret_hex: str) -> str:
-    key = bytes.fromhex(shared_secret_hex)
-    ciphertext = _aes_cbc_encrypt(password.encode("utf-8"), key, key[:16])
+def _encrypt_password(password: str, private_key: Any) -> str:
+    secret = private_key.exchange(
+        _ecdh_algorithm(),
+        _public_key_from_hex(PASSPORT_SERVER_PUBLIC_KEY),
+    )
+    ciphertext = _aes_cbc_encrypt(password.encode("utf-8"), secret, secret[:16])
     return base64.b64encode(ciphertext).decode("ascii")
 
 
