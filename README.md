@@ -51,6 +51,146 @@ image and asks for the answer before continuing.
 Your password is used only during setup and is not stored in the Home Assistant
 config entry.
 
+## Dashboard Example
+
+This example uses only built-in Home Assistant cards. If Home Assistant created
+different entity IDs for your printer, replace the entity IDs below with your
+own.
+
+```yaml
+type: vertical-stack
+cards:
+  - type: entities
+    title: eufyMake E1
+    show_header_toggle: false
+    entities:
+      - entity: sensor.eufymake_e1_availability
+        name: Availability
+      - entity: sensor.eufymake_e1_print_status
+        name: Print status
+      - entity: sensor.eufymake_e1_firmware_version
+        name: Firmware
+      - entity: sensor.eufymake_e1_mqtt_online
+        name: MQTT online
+      - entity: sensor.eufymake_e1_p2p_online
+        name: P2P online
+
+  - type: grid
+    title: Ink levels
+    columns: 3
+    square: false
+    cards:
+      - type: gauge
+        entity: sensor.eufymake_e1_cyan_ink
+        name: Cyan
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+      - type: gauge
+        entity: sensor.eufymake_e1_magenta_ink
+        name: Magenta
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+      - type: gauge
+        entity: sensor.eufymake_e1_yellow_ink
+        name: Yellow
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+      - type: gauge
+        entity: sensor.eufymake_e1_black_ink
+        name: Black
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+      - type: gauge
+        entity: sensor.eufymake_e1_white_ink
+        name: White
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+      - type: gauge
+        entity: sensor.eufymake_e1_gloss_ink
+        name: Gloss
+        min: 0
+        max: 100
+        needle: false
+        severity:
+          red: 0
+          yellow: 15
+          green: 30
+
+  - type: gauge
+    entity: sensor.eufymake_e1_waste_ink
+    name: Waste ink
+    min: 0
+    max: 100
+    needle: false
+    severity:
+      green: 0
+      yellow: 70
+      red: 90
+
+  - type: entities
+    title: Ink expiration
+    show_header_toggle: false
+    entities:
+      - entity: sensor.eufymake_e1_cyan_ink_expiration_date
+        name: Cyan expiration
+      - entity: sensor.eufymake_e1_cyan_ink_days_until_expiration
+        name: Cyan days left
+      - entity: sensor.eufymake_e1_magenta_ink_expiration_date
+        name: Magenta expiration
+      - entity: sensor.eufymake_e1_magenta_ink_days_until_expiration
+        name: Magenta days left
+      - entity: sensor.eufymake_e1_yellow_ink_expiration_date
+        name: Yellow expiration
+      - entity: sensor.eufymake_e1_yellow_ink_days_until_expiration
+        name: Yellow days left
+      - entity: sensor.eufymake_e1_black_ink_expiration_date
+        name: Black expiration
+      - entity: sensor.eufymake_e1_black_ink_days_until_expiration
+        name: Black days left
+      - entity: sensor.eufymake_e1_white_ink_expiration_date
+        name: White expiration
+      - entity: sensor.eufymake_e1_white_ink_days_until_expiration
+        name: White days left
+      - entity: sensor.eufymake_e1_gloss_ink_expiration_date
+        name: Gloss expiration
+      - entity: sensor.eufymake_e1_gloss_ink_days_until_expiration
+        name: Gloss days left
+      - entity: sensor.eufymake_e1_waste_ink_expiration_date
+        name: Waste ink expiration
+      - entity: sensor.eufymake_e1_waste_ink_days_until_expiration
+        name: Waste ink days left
+```
+
 ## Notes
 
 This project is not affiliated with eufyMake, AnkerMake, or Anker.
