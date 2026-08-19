@@ -22,6 +22,7 @@ class EufyMakeSensorDescription(SensorEntityDescription):
     """Describe a eufyMake E1 sensor."""
 
     value_fn: Callable[[dict[str, Any]], Any]
+    attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
 SENSORS: tuple[EufyMakeSensorDescription, ...] = (
@@ -49,6 +50,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="waste_ink",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: data.get("waste_ink"),
+        attributes_fn=lambda data: _waste_ink_attributes(data),
     ),
     EufyMakeSensorDescription(
         key="ink_c",
@@ -56,6 +58,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_c",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "C"),
+        attributes_fn=lambda data: _ink_attributes(data, "C"),
     ),
     EufyMakeSensorDescription(
         key="ink_m",
@@ -63,6 +66,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_m",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "M"),
+        attributes_fn=lambda data: _ink_attributes(data, "M"),
     ),
     EufyMakeSensorDescription(
         key="ink_y",
@@ -70,6 +74,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_y",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "Y"),
+        attributes_fn=lambda data: _ink_attributes(data, "Y"),
     ),
     EufyMakeSensorDescription(
         key="ink_k",
@@ -77,6 +82,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_k",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "K"),
+        attributes_fn=lambda data: _ink_attributes(data, "K"),
     ),
     EufyMakeSensorDescription(
         key="ink_w",
@@ -84,6 +90,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_w",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "W"),
+        attributes_fn=lambda data: _ink_attributes(data, "W"),
     ),
     EufyMakeSensorDescription(
         key="ink_g",
@@ -91,6 +98,7 @@ SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         translation_key="ink_g",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "G"),
+        attributes_fn=lambda data: _ink_attributes(data, "G"),
     ),
     EufyMakeSensorDescription(
         key="mqtt_online",
@@ -153,6 +161,15 @@ class EufyMakeE1Sensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
         """Return the sensor value."""
         return self.entity_description.value_fn(self.coordinator.data or {})
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return sensor attributes."""
+        if self.entity_description.attributes_fn is None:
+            return {}
+        return _clean_attributes(
+            self.entity_description.attributes_fn(self.coordinator.data or {})
+        )
+
 
 class EufyMakeE1PartSensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
     """Representation of a eufyMake E1 consumable or service part."""
@@ -214,6 +231,27 @@ def _ink_value(data: dict[str, Any], channel: str) -> Any:
     if not isinstance(ink, dict):
         return None
     return ink.get(channel)
+
+
+def _ink_attributes(data: dict[str, Any], channel: str) -> dict[str, Any]:
+    details = data.get("ink_details", {})
+    if not isinstance(details, dict):
+        return {}
+    attributes = details.get(channel, {})
+    return attributes if isinstance(attributes, dict) else {}
+
+
+def _waste_ink_attributes(data: dict[str, Any]) -> dict[str, Any]:
+    attributes = data.get("waste_ink_details", {})
+    return attributes if isinstance(attributes, dict) else {}
+
+
+def _clean_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in attributes.items()
+        if value is not None
+    }
 
 
 def _slug(value: str) -> str:

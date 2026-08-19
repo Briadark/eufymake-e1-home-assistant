@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from datetime import timedelta
 import logging
 from typing import Any
@@ -94,14 +95,21 @@ def _data_from_live_result(
 ) -> dict[str, Any]:
     """Build coordinator data from live MQTT status."""
     ink = {}
+    ink_details = {}
     waste_ink = None
+    waste_ink_details = {}
     if ink_status is not None:
         ink = {
             channel.channel: channel.remaining_percent
             for channel in ink_status.channels
         }
+        ink_details = {
+            channel.channel: _ink_channel_attributes(channel)
+            for channel in ink_status.channels
+        }
         if ink_status.waste_tank is not None:
             waste_ink = ink_status.waste_tank.remaining_percent
+            waste_ink_details = _ink_channel_attributes(ink_status.waste_tank)
 
     return {
         "availability": "online" if ink_status is not None else "unknown",
@@ -110,6 +118,34 @@ def _data_from_live_result(
         "mqtt_online": mqtt_online,
         "p2p_online": p2p_online,
         "ink": ink,
+        "ink_details": ink_details,
         "waste_ink": waste_ink,
+        "waste_ink_details": waste_ink_details,
         "parts": [],
     }
+
+
+def _ink_channel_attributes(channel: Any) -> dict[str, Any]:
+    """Return public HA attributes for an ink or waste tank record."""
+    return {
+        "status": getattr(channel, "status", None),
+        "manufacture_date": _date_from_timestamp(
+            getattr(channel, "manufacture_timestamp", None)
+        ),
+        "expiration_date": _date_from_timestamp(
+            getattr(channel, "expiration_timestamp", None)
+        ),
+        "days_until_expiration": getattr(
+            channel,
+            "distance_expiration_days",
+            None,
+        ),
+        "expired": getattr(channel, "expired", None),
+    }
+
+
+def _date_from_timestamp(timestamp: int | None) -> str | None:
+    """Convert a Unix timestamp to an ISO calendar date."""
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()

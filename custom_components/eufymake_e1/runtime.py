@@ -110,6 +110,11 @@ class InkChannel:
 
     channel: str
     remaining_percent: float | None
+    status: int | None
+    manufacture_timestamp: int | None
+    expiration_timestamp: int | None
+    distance_expiration_days: int | None
+    expired: bool | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -117,6 +122,10 @@ class WasteInkTank:
     """E1 waste ink tank status."""
 
     remaining_percent: float | None
+    status: int | None
+    expiration_timestamp: int | None
+    distance_expiration_days: int | None
+    expired: bool | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -470,6 +479,14 @@ def parse_ink_status(message: dict[str, Any]) -> InkStatus:
 def _parse_channels(ink: dict[str, Any]) -> tuple[InkChannel, ...]:
     channels = _list(ink.get("colorSort"))
     levels = _list(ink.get("leftInk"))
+    statuses = _list(ink.get("status"))
+    manufacture = _first_existing_list(
+        ink,
+        ("manufactureTimestamp", "manufactureTime"),
+    )
+    expiration = _list(ink.get("expirationTimestamp"))
+    distance_expiration = _list(ink.get("distanceExpiration"))
+    expired = _list(ink.get("expired"))
     if not channels:
         count = _optional_int(ink.get("count")) or len(levels)
         channels = [str(index + 1) for index in range(count)]
@@ -477,6 +494,13 @@ def _parse_channels(ink: dict[str, Any]) -> tuple[InkChannel, ...]:
         InkChannel(
             channel=str(channel),
             remaining_percent=_hundredths_percent(_at(levels, index)),
+            status=_optional_int(_at(statuses, index)),
+            manufacture_timestamp=_optional_int(_at(manufacture, index)),
+            expiration_timestamp=_optional_int(_at(expiration, index)),
+            distance_expiration_days=_optional_int(
+                _at(distance_expiration, index)
+            ),
+            expired=_optional_bool(_at(expired, index)),
         )
         for index, channel in enumerate(channels)
     )
@@ -489,7 +513,17 @@ def _parse_waste_tank(waste_ink: dict[str, Any]) -> WasteInkTank | None:
         waste_ink,
         ("leftInk", "remainingInk", "remaining", "level"),
     )
-    return WasteInkTank(remaining_percent=_hundredths_percent(_at(levels, 0)))
+    statuses = _list(waste_ink.get("status"))
+    expiration = _list(waste_ink.get("expirationTimestamp"))
+    distance_expiration = _list(waste_ink.get("distanceExpiration"))
+    expired = _list(waste_ink.get("expired"))
+    return WasteInkTank(
+        remaining_percent=_hundredths_percent(_at(levels, 0)),
+        status=_optional_int(_at(statuses, 0)),
+        expiration_timestamp=_optional_int(_at(expiration, 0)),
+        distance_expiration_days=_optional_int(_at(distance_expiration, 0)),
+        expired=_optional_bool(_at(expired, 0)),
+    )
 
 
 def _build_client(mqtt: Any, client_id: str) -> Any:
@@ -565,3 +599,10 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    parsed = _optional_int(value)
+    if parsed is None:
+        return None
+    return bool(parsed)
