@@ -11,12 +11,12 @@ from pathlib import Path
 def main() -> int:
     """Run an interactive, redacted login probe."""
     auth = _load_auth_module()
-    region = input("Region [eu/us] (default eu): ").strip().lower() or "eu"
+    country = input("Country code (default NL): ").strip().upper() or "NL"
     email = input("Email: ").strip()
     password = getpass.getpass("Password: ")
 
     try:
-        result = auth.EufyMakeCloudAuthClient(region=region).login(
+        result = auth.EufyMakeCloudAuthClient(country=country).login(
             email=email,
             password=password,
         )

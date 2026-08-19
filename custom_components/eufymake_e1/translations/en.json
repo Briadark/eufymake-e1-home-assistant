@@ -12,12 +12,12 @@
       "login": {
         "title": "Log in to eufyMake",
         "data": {
-          "region": "Region",
+          "country": "Country code",
           "email": "Email",
           "password": "Password"
         },
         "data_description": {
-          "region": "Select the region used by your eufyMake account and E1."
+          "country": "Use the two-letter country code selected during eufyMake login, for example NL."
         }
       },
       "device": {

@@ -9,7 +9,6 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote
@@ -17,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from .const import CONF_DEVICE_SN, CONF_EMAIL, CONF_FIRMWARE_VERSION
 from .const import CONF_MQTT_HOST, CONF_REGION, CONF_SECRET_KEY, CONF_USER_ID
+from .const import REGION_EU, REGION_US, US_REGION_COUNTRIES
 
 APP_VERSION = "4.2.2"
 ANKERMAKE_APP_NAME = "anker_make"
@@ -25,18 +25,16 @@ PASSPORT_SERVER_PUBLIC_KEY = (
     "04c5c00c4f8d1197cc7c3167c52bf7acb054d722f0ef08dcd7e0883236e0d72a38"
     "68d9750cb47fa4619248f3d83f0f662671dadc6e2d31c2f41db0161651c7c076"
 )
-KEY_EXCHANGE_PATH = "/v3/pc/oauth/key_exchange"
-LOGIN_PATHS = ("/v2/passport/login", "/v2/passport/login_sec")
+APP_KEY_EXCHANGE_PATH = "/v3/pc/oauth/key_exchange"
+LOGIN_PATH = "/v2/passport/login"
 DEVICE_LIST_PATH = "/v1/app/query_fdm_list"
 
 REGION_ENDPOINTS = {
     "us": {
-        "country": "US",
         "app_domain": "make-app.ankermake.com",
         "mqtt_host": "make-mqtt.ankermake.com",
     },
     "eu": {
-        "country": "NL",
         "app_domain": "make-app-eu.ankermake.com",
         "mqtt_host": "make-mqtt-eu.ankermake.com",
     },
@@ -84,52 +82,87 @@ class EufyMakeLoginResult:
 class EufyMakeCloudAuthClient:
     """Minimal eufyMake cloud client for Home Assistant setup."""
 
-    def __init__(self, *, region: str, timeout: float = 20) -> None:
+    def __init__(
+        self,
+        *,
+        region: str | None = None,
+        country: str = "NL",
+        timeout: float = 20,
+    ) -> None:
         """Initialize a regional auth client."""
+        country = country.strip().upper()
+        if not region:
+            region = region_from_country(country)
         if region not in REGION_ENDPOINTS:
             raise EufyMakeAuthError(f"Unsupported region: {region}")
         self.region = region
         self.timeout = timeout
         self.app_domain = REGION_ENDPOINTS[region]["app_domain"]
         self.mqtt_host = REGION_ENDPOINTS[region]["mqtt_host"]
-        self.country = REGION_ENDPOINTS[region]["country"]
+        self.country = country
 
     def login(self, *, email: str, password: str) -> EufyMakeLoginResult:
         """Log in and fetch E1 devices needed for MQTT setup."""
+        normalized_email = email.strip().lower()
         session_key = _perform_key_exchange(
             app_domain=self.app_domain,
             timeout=self.timeout,
         )
         login_body = {
-            "ab": self.country,
-            "client_secret_info": {
-                "public_key": session_key.public_key_hex,
-            },
-            "email": email,
-            "enc": 0,
+            "email": normalized_email,
             "password": _encrypt_password(password, session_key.private_key),
-            "time_zone": _timezone_offset_ms(),
-            "transaction": str(int(time.time() * 1000)),
+            "ab": self.country,
+            "ab_code": self.country,
+            "login_id": "",
+            "verify_code": "",
+            "captcha_id": "",
+            "answer": "",
+            "client_secret_info": {"public_key": session_key.public_key_hex},
         }
-        response = self._try_login_paths(login_body, session_key)
+        response = _post_encrypted(
+            app_domain=self.app_domain,
+            path=LOGIN_PATH,
+            body=login_body,
+            entry_id=session_key.entry_id,
+            share_key_hex=session_key.share_key_hex,
+            auth_token=None,
+            user_id=None,
+            timeout=self.timeout,
+            country=self.country,
+            extra_headers={
+                **_desktop_headers(
+                    self.country,
+                    openudid=hashlib.sha256(normalized_email.encode()).hexdigest(),
+                )
+            },
+        )
         data = _expect_success(response)
         if not isinstance(data, dict):
             raise EufyMakeAuthError("Login response data is not an object")
+        if _requires_verification(data):
+            raise EufyMakeApiCodeError(26052, "Verification required", data)
 
-        auth_token = str(data.get("auth_token") or "")
-        user_id = str(data.get("user_id") or "")
+        account_data = dict(data)
+        account_data["domain"] = self.app_domain
+
+        auth_token = str(account_data.get("auth_token") or "")
+        user_id = str(account_data.get("user_id") or "")
         if not auth_token or not user_id:
             raise EufyMakeAuthError("Login response did not include a token and user ID")
 
-        account_email = _response_email(data.get("email"), data, session_key.private_key)
+        account_email = _response_email(
+            account_data.get("email"),
+            account_data,
+            session_key.private_key,
+        )
         session = EufyMakeSession(
             region=self.region,
             app_domain=self.app_domain,
             mqtt_host=self.mqtt_host,
             user_id=user_id,
-            email=account_email or email,
+            email=account_email or normalized_email,
             auth_token=auth_token,
-            token_expires_at=_optional_int(data.get("token_expires_at")),
+            token_expires_at=_optional_int(account_data.get("token_expires_at")),
             entry_id=session_key.entry_id,
             share_key_hex=session_key.share_key_hex,
         )
@@ -137,31 +170,6 @@ class EufyMakeCloudAuthClient:
         if not devices:
             raise EufyMakeAuthError("No eufyMake E1 devices were found on this account")
         return EufyMakeLoginResult(session=session, devices=devices)
-
-    def _try_login_paths(
-        self,
-        login_body: dict[str, Any],
-        session_key: _SessionKey,
-    ) -> dict[str, Any]:
-        """Try known password-login endpoints."""
-        errors: list[str] = []
-        for path in LOGIN_PATHS:
-            try:
-                return _post_encrypted(
-                    app_domain=self.app_domain,
-                    path=path,
-                    body=login_body,
-                    entry_id=session_key.entry_id,
-                    share_key_hex=session_key.share_key_hex,
-                    auth_token=None,
-                    user_id=None,
-                    timeout=self.timeout,
-                )
-            except EufyMakeApiCodeError:
-                raise
-            except EufyMakeAuthError as err:
-                errors.append(f"{path}: {err}")
-        raise EufyMakeAuthError("; ".join(errors))
 
     def get_devices(self, session: EufyMakeSession) -> list[dict[str, Any]]:
         """Fetch all cloud devices for a logged-in session."""
@@ -174,6 +182,8 @@ class EufyMakeCloudAuthClient:
             auth_token=session.auth_token,
             user_id=session.user_id,
             timeout=self.timeout,
+            country=self.country,
+            extra_headers=_desktop_headers(self.country),
         )
         data = _expect_success(response)
         if not isinstance(data, list):
@@ -215,28 +225,43 @@ def build_setup_from_login_device(
     return data
 
 
-def _perform_key_exchange(*, app_domain: str, timeout: float) -> _SessionKey:
+def region_from_country(country: str) -> str:
+    """Return the eufyMake backend region for a country code."""
+    return REGION_US if country.strip().upper() in US_REGION_COUNTRIES else REGION_EU
+
+
+def _perform_key_exchange(
+    *,
+    app_domain: str,
+    timeout: float,
+    path: str = APP_KEY_EXCHANGE_PATH,
+    app_name: str = ANKERMAKE_APP_NAME,
+    model_type: str = "WEB",
+    app_name_header: str = "App_name",
+    model_type_header: str = "Model-Type",
+    local_key_hex: str = ANKERMAKE_PROD_LOCAL_KEY,
+) -> _SessionKey:
     private_key, public_key_hex = _generate_ecdh_key_pair()
     encrypted_public_key = _aes_cbc_encrypt_with_random_iv(
         public_key_hex.encode("utf-8"),
-        bytes.fromhex(ANKERMAKE_PROD_LOCAL_KEY),
+        bytes.fromhex(local_key_hex),
     )
     encrypted_public_key_b64 = base64.b64encode(encrypted_public_key).decode("ascii")
     entry_id = secrets.token_hex(16)
     timestamp = str(int(time.time()))
     nonce = secrets.token_hex(16)
     signature = _hmac_sha256_hex(
-        ANKERMAKE_PROD_LOCAL_KEY.encode("utf-8"),
+        local_key_hex.encode("utf-8"),
         f"{timestamp}+{nonce}+{encrypted_public_key_b64}",
     )
     response = _post_plain(
         app_domain=app_domain,
-        path=KEY_EXCHANGE_PATH,
+        path=path,
         body={"client_public_key": encrypted_public_key_b64},
         headers={
             "content-type": "application/json",
-            "Model-Type": "WEB",
-            "App_name": ANKERMAKE_APP_NAME,
+            model_type_header: model_type,
+            app_name_header: app_name,
             "X-Key-Ident": entry_id,
             "X-Request-Ts": timestamp,
             "X-Request-Once": nonce,
@@ -250,7 +275,7 @@ def _perform_key_exchange(*, app_domain: str, timeout: float) -> _SessionKey:
         raise EufyMakeAuthError("Key exchange response is missing server public key")
     server_public_key = _aes_cbc_decrypt_with_prepended_iv(
         base64.b64decode(str(data["server_public_key"])),
-        bytes.fromhex(ANKERMAKE_PROD_LOCAL_KEY),
+        bytes.fromhex(local_key_hex),
     ).decode("utf-8")
     shared_secret = private_key.exchange(
         _ecdh_algorithm(),
@@ -276,6 +301,10 @@ def _post_encrypted(
     auth_token: str | None,
     user_id: str | None,
     timeout: float,
+    app_name: str = ANKERMAKE_APP_NAME,
+    model_type: str = "PC",
+    country: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     key = bytes.fromhex(share_key_hex)
     encoded_body = json.dumps(body, separators=(",", ":")).encode("utf-8")
@@ -285,10 +314,10 @@ def _post_encrypted(
     nonce = secrets.token_hex(16)
     headers = {
         "content-type": "application/json",
-        "App-name": ANKERMAKE_APP_NAME,
+        "app-name": app_name,
         "App-version": APP_VERSION,
-        "Model-type": "PC",
-        "Language": "en",
+        "model-type": model_type,
+        "language": "en",
         "Accept": "application/json",
         "User-Agent": f"eufyMake Studio/{APP_VERSION}",
         "X-Key-Ident": entry_id,
@@ -301,6 +330,10 @@ def _post_encrypted(
         "X-Encryption-Info": "algo_ecdh",
         "X-Replay-Info": "replay",
     }
+    if country:
+        headers["country"] = country
+    if extra_headers:
+        headers.update(extra_headers)
     if auth_token:
         headers["X-Auth-Token"] = auth_token
         headers["Gtoken"] = hashlib.md5((user_id or "").encode()).hexdigest()
@@ -365,6 +398,24 @@ def _expect_success(response: dict[str, Any]) -> Any:
     )
 
 
+def _requires_verification(data: dict[str, Any]) -> bool:
+    fa_info = data.get("fa_info")
+    return isinstance(fa_info, dict) and _optional_int(fa_info.get("step")) == 26052
+
+
+def _desktop_headers(country: str, *, openudid: str | None = None) -> dict[str, str]:
+    return {
+        "App_name": ANKERMAKE_APP_NAME,
+        "App_version": "14",
+        "Country": country,
+        "Language": "en",
+        "Model_type": "PC",
+        "Openudid": openudid or secrets.token_hex(16),
+        "Os_type": "Windows",
+        "Os_version": "10",
+    }
+
+
 def _decode_body(value: bytes) -> dict[str, Any] | str | None:
     if not value:
         return None
@@ -397,7 +448,10 @@ def _response_email(
             public_key_hex = str(server_secret_info["public_key"])
         else:
             public_key_hex = PASSPORT_SERVER_PUBLIC_KEY
-        secret = private_key.exchange(_ecdh_algorithm(), _public_key_from_hex(public_key_hex))
+        secret = private_key.exchange(
+            _ecdh_algorithm(),
+            _public_key_from_hex(public_key_hex),
+        )
         return _aes_cbc_decrypt(
             base64.b64decode(text),
             secret,
@@ -476,14 +530,6 @@ def _ecdh_algorithm() -> Any:
     from cryptography.hazmat.primitives.asymmetric import ec
 
     return ec.ECDH()
-
-
-def _timezone_offset_ms() -> int:
-    offset = datetime.now().astimezone().utcoffset()
-    seconds = int(offset.total_seconds()) if offset else 0
-    if seconds == 0:
-        return 0
-    return seconds * 1000
 
 
 def _optional_int(value: Any) -> int | None:

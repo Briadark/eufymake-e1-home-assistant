@@ -16,19 +16,21 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_COUNTRY,
     CONF_DEVICE_SN,
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_REGION,
     CONF_SETUP_EXPORT,
     DOMAIN,
-    REGION_EU,
-    REGION_OPTIONS,
 )
 
 _STEP_LOGIN_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_REGION, default=REGION_EU): vol.In(REGION_OPTIONS),
+        vol.Required(CONF_COUNTRY, default="NL"): vol.All(
+            str,
+            vol.Length(min=2, max=2),
+        ),
         vol.Required(CONF_EMAIL): TextSelector(
             TextSelectorConfig(
                 type=TextSelectorType.EMAIL,
@@ -80,7 +82,7 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 result = await self.hass.async_add_executor_job(
                     partial(
                         _login,
-                        region=user_input[CONF_REGION],
+                        country=user_input[CONF_COUNTRY],
                         email=user_input[CONF_EMAIL],
                         password=user_input[CONF_PASSWORD],
                     )
@@ -174,12 +176,17 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-def _login(*, region: str, email: str, password: str) -> Any:
+def _login(*, country: str, email: str, password: str) -> Any:
     """Run eufyMake cloud login without importing auth at module import time."""
     from .auth import EufyMakeApiCodeError, EufyMakeAuthError, EufyMakeCloudAuthClient
+    from .auth import region_from_country
 
     try:
-        return EufyMakeCloudAuthClient(region=region).login(
+        country_code = country.strip().upper()
+        return EufyMakeCloudAuthClient(
+            region=region_from_country(country_code),
+            country=country_code,
+        ).login(
             email=email,
             password=password,
         )

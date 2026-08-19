@@ -36,14 +36,14 @@ New-Item -ItemType Junction `
 
 Restart Home Assistant, then add "eufyMake E1" from Devices & services.
 
-The preferred setup path is now eufyMake account login. Select your account
-region, enter your eufyMake email and password, then select the E1 if more than
-one supported printer is found. The password is used only during setup and is not
-stored in the Home Assistant config entry.
+The preferred setup path is now eufyMake account login. Enter the two-letter
+country code used by your eufyMake account, your eufyMake email, and password,
+then select the E1 if more than one supported printer is found. The password is
+used only during setup and is not stored in the Home Assistant config entry.
 
-Only the global EU and US production regions are exposed. Other regions and
-test environments may exist in eufyMake Studio, but they are not enabled here
-until they can be verified with an E1 setup.
+The integration maps the country code to the global EU or US production backend.
+Other regions and test environments may exist in eufyMake Studio, but they are
+not enabled here until they can be verified with an E1 setup.
 
 The setup export path remains available as a fallback. It uses a one-time JSON
 export from the Windows machine where eufyMake Studio is already logged in. This

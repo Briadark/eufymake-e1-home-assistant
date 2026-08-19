@@ -59,6 +59,7 @@ def load_config_flow_module():
         return args
 
     config_entries.ConfigFlow = ConfigFlow
+    const.CONF_COUNTRY = "country"
     const.CONF_DEVICE_SN = "device_sn"
     const.CONF_EMAIL = "email"
     const.CONF_PASSWORD = "password"

@@ -84,6 +84,40 @@ def test_aes_cbc_prepended_iv_roundtrip() -> None:
     assert module._aes_cbc_decrypt_with_prepended_iv(ciphertext, key) == plaintext
 
 
+def test_login_uses_printer_api_endpoint() -> None:
+    module = _load_auth_module()
+
+    assert module.APP_KEY_EXCHANGE_PATH == "/v3/pc/oauth/key_exchange"
+    assert module.LOGIN_PATH == "/v2/passport/login"
+
+
+def test_country_routes_to_expected_region() -> None:
+    module = _load_auth_module()
+
+    assert module.region_from_country("NL") == "eu"
+    assert module.region_from_country("DE") == "eu"
+    assert module.region_from_country("US") == "us"
+    assert module.region_from_country("ca") == "us"
+
+
+def test_printer_api_domains_are_configured() -> None:
+    module = _load_auth_module()
+
+    assert module.REGION_ENDPOINTS["eu"]["app_domain"] == "make-app-eu.ankermake.com"
+    assert module.REGION_ENDPOINTS["us"]["app_domain"] == "make-app.ankermake.com"
+
+
+def test_desktop_headers_use_native_shape() -> None:
+    module = _load_auth_module()
+
+    headers = module._desktop_headers("NL", openudid="fixture-openudid")
+
+    assert headers["App_name"] == "anker_make"
+    assert headers["Model_type"] == "PC"
+    assert headers["Country"] == "NL"
+    assert headers["Openudid"] == "fixture-openudid"
+
+
 def _load_auth_module():
     package = types.ModuleType("custom_components.eufymake_e1")
     package.__path__ = [str(COMPONENT_DIR)]
