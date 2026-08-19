@@ -68,7 +68,7 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         return self.async_show_menu(
             step_id="user",
-            menu_options=["login", "setup_export"],
+            menu_options=["setup_export", "login"],
         )
 
     async def async_step_login(

@@ -5,19 +5,19 @@
       "user": {
         "title": "Connect eufyMake E1",
         "menu_options": {
-          "login": "Log in with eufyMake account",
-          "setup_export": "Paste setup export JSON"
+          "setup_export": "Paste setup export JSON",
+          "login": "Log in with eufyMake account"
         }
       },
       "login": {
         "title": "Log in to eufyMake",
         "data": {
-          "region": "Region",
+          "country": "Country code",
           "email": "Email",
           "password": "Password"
         },
         "data_description": {
-          "region": "Select the region used by your eufyMake account and E1."
+          "country": "Use the two-letter country code selected during eufyMake login, for example NL."
         }
       },
       "device": {
@@ -32,7 +32,7 @@
           "setup_export": "Setup export JSON"
         },
         "data_description": {
-          "setup_export": "Run tools/export_home_assistant_setup.py on the Windows machine with eufyMake Studio installed, then paste the JSON here."
+          "setup_export": "From the repository folder on the Windows machine where eufyMake Studio is already logged in, run tools/export_home_assistant_setup.py, then paste the JSON here."
         }
       }
     },
@@ -43,11 +43,11 @@
       "login_required": "Log in before selecting a device."
     },
     "error": {
-      "cannot_connect": "Could not connect to eufyMake. Check the region and try again.",
-      "captcha_required": "eufyMake requested captcha verification. Use the setup export fallback for now.",
+      "cannot_connect": "Could not connect to eufyMake. Check the country code and try again.",
+      "captcha_required": "eufyMake requested captcha verification. Stop retrying account login for now and use the setup export fallback.",
       "invalid_auth": "The eufyMake login details were rejected.",
       "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1.",
-      "rate_limited": "eufyMake temporarily rate-limited login attempts. Try again later.",
+      "rate_limited": "eufyMake temporarily rate-limited login attempts. Stop retrying for now and try again later.",
       "verification_required": "eufyMake requested email verification. Use the setup export fallback for now."
     }
   },

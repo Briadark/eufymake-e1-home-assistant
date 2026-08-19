@@ -22,6 +22,7 @@ def main() -> int:
         )
     except auth.EufyMakeApiCodeError as err:
         print(f"Login API error: code={err.code} msg={err.message}")
+        _print_redacted_api_data(err.data)
         return 2
     except auth.EufyMakeAuthError as err:
         print(f"Login failed: {err}")
@@ -60,6 +61,26 @@ def _load_module(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _print_redacted_api_data(data) -> None:
+    """Print response shape without exposing tokens or identifiers."""
+    if data is None:
+        return
+    print(f"Response data type: {type(data).__name__}")
+    if isinstance(data, dict):
+        keys = ", ".join(sorted(str(key) for key in data))
+        print(f"Response data keys: {keys or '<none>'}")
+        for key in sorted(str(key) for key in data):
+            value = data.get(key)
+            if isinstance(value, (dict, list, tuple)):
+                print(f"  {key}: {type(value).__name__} size={len(value)}")
+            elif isinstance(value, str):
+                print(f"  {key}: string length={len(value)}")
+            else:
+                print(f"  {key}: {type(value).__name__}")
+    elif isinstance(data, (list, tuple)):
+        print(f"Response data length: {len(data)}")
 
 
 if __name__ == "__main__":
