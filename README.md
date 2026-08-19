@@ -12,8 +12,8 @@ eufyMake cloud MQTT path and exposes printer status as Home Assistant sensors.
 - Setup from the Home Assistant integrations UI.
 - eufyMake account login with country dropdown, email, password, and captcha
   support.
-- Sensors for availability, firmware, connectivity, ink levels, ink expiration,
-  and waste ink.
+- Sensors for availability, firmware, current accessory, connectivity, ink
+  levels, ink expiration, and waste ink.
 - Bundled MQTT certificate, so no certificate file from the Windows app is
   needed.
 
@@ -73,6 +73,8 @@ cards:
         name: Print status
       - entity: sensor.eufymake_e1_firmware_version
         name: Firmware
+      - entity: sensor.eufymake_e1_current_accessory
+        name: Current accessory
       - entity: sensor.eufymake_e1_mqtt_online
         name: MQTT online
       - entity: sensor.eufymake_e1_p2p_online

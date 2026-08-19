@@ -66,6 +66,11 @@ def _waste_ink_attributes(data: dict[str, Any]) -> dict[str, Any]:
     return attributes if isinstance(attributes, dict) else {}
 
 
+def _accessory_attributes(data: dict[str, Any]) -> dict[str, Any]:
+    attributes = data.get("current_accessory_details", {})
+    return attributes if isinstance(attributes, dict) else {}
+
+
 def _date_value(attributes: dict[str, Any], key: str) -> date | None:
     value = attributes.get(key)
     if not isinstance(value, str):
@@ -104,6 +109,13 @@ BASE_SENSORS: tuple[EufyMakeSensorDescription, ...] = (
         name="Firmware version",
         translation_key="firmware_version",
         value_fn=lambda data: data.get("firmware_version"),
+    ),
+    EufyMakeSensorDescription(
+        key="current_accessory",
+        name="Current accessory",
+        translation_key="current_accessory",
+        value_fn=lambda data: data.get("current_accessory"),
+        attributes_fn=_accessory_attributes,
     ),
 )
 

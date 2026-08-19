@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -78,6 +79,12 @@ def main() -> int:
         choices=("cbc", "gcm", "both"),
         default="cbc",
     )
+    parser.add_argument(
+        "--listen-after-ink",
+        type=float,
+        default=0,
+        help="Keep listening this many seconds after the first ink status.",
+    )
     parser.add_argument("--profile-dir", type=Path, default=default_profile_dir())
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--device-sn")
@@ -114,20 +121,15 @@ def main() -> int:
         result = EufyMakeMqttStatusClient(plan, ca_file=args.ca_file).fetch_once(
             timeout=args.timeout,
             publish_variant=args.publish_variant,
+            listen_after_ink=args.listen_after_ink,
+            on_decoded_message=_print_decoded_message,
         )
+    except KeyboardInterrupt:
+        print("Probe stopped by user.")
+        return 130
     except EufyMakeMqttClientError as err:
         print(f"MQTT probe failed: {err}")
         return 2
-
-    for message in result.decoded_messages:
-        if find_ink_status(message.payload) is not None:
-            continue
-        print(
-            "Decoded non-ink MQTT message "
-            f"variant={message.variant} "
-            f"topic={redact_topic(message.topic)}:"
-        )
-        print(redact(message.payload))
 
     if result.ink_status is not None:
         _print_ink_status(result.ink_status)
@@ -139,6 +141,18 @@ def main() -> int:
         f"undecoded={result.undecoded})"
     )
     return 1
+
+
+def _print_decoded_message(message: Any) -> None:
+    if find_ink_status(message.payload) is not None:
+        return
+    print(
+        "Decoded non-ink MQTT message "
+        f"variant={message.variant} "
+        f"topic={redact_topic(message.topic)}:",
+        flush=True,
+    )
+    print(redact(message.payload), flush=True)
 
 
 def _print_ink_status(ink_status: object) -> None:

@@ -16,10 +16,11 @@ def test_ink_sensors_are_grouped_by_channel() -> None:
 
     keys = [description.key for description in module.SENSORS]
 
-    assert keys[:9] == [
+    assert keys[:10] == [
         "availability",
         "print_status",
         "firmware_version",
+        "current_accessory",
         "ink_c",
         "ink_c_expiration_date",
         "ink_c_days_until_expiration",
@@ -27,7 +28,7 @@ def test_ink_sensors_are_grouped_by_channel() -> None:
         "ink_c_manufacture_date",
         "ink_c_status",
     ]
-    assert keys[9:15] == [
+    assert keys[10:16] == [
         "ink_m",
         "ink_m_expiration_date",
         "ink_m_days_until_expiration",

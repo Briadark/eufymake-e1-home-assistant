@@ -21,6 +21,20 @@ APP_HEADER_SIZE = 64
 DEVICE_HEADER_SIZE = 24
 PACKET_TYPE_SINGLE = 0xC0
 STATUS_QUERY_COMMAND = {"commandType": 1027, "value": 0}
+ACCESSORY_INFO_COMMAND = 1153
+PLATE_INFO_COMMAND = 1118
+PLATE_TYPE_NAMES = {
+    0: "Mini Flatbed",
+    1: "Standard Flatbed",
+    3: "Rotary Printing Attachment",
+    4: "Roll-to-Film Attachment",
+}
+ATTACHMENT_TYPE_NAMES = {
+    0: "Mini Flatbed",
+    2: "Standard Flatbed",
+    3: "Roll-to-Film Attachment",
+    4: "Rotary Printing Attachment",
+}
 
 MQTT_CA_PEM = """-----BEGIN CERTIFICATE-----
 MIIDwTCCAqmgAwIBAgIJAKrbZvWARI3BMA0GCSqGSIb3DQEBCwUAMHUxCzAJBgNV
@@ -134,6 +148,16 @@ class InkStatus:
 
     channels: tuple[InkChannel, ...]
     waste_tank: WasteInkTank | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class AccessoryStatus:
+    """Parsed E1 accessory or plate status."""
+
+    name: str | None
+    attachment_type: int | None
+    plate_type: int | None
+    version: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -297,7 +321,7 @@ class EufyMakeMqttStatusClient:
         client.on_disconnect = on_disconnect
 
         try:
-            client.connect(self.plan.host, self.plan.port, keepalive=1)
+            client.connect(self.plan.host, self.plan.port, keepalive=30)
             client.loop_start()
             done.wait(timeout)
         except Exception as err:
@@ -466,6 +490,34 @@ def find_ink_status(payload: Any) -> InkStatus | None:
     return None
 
 
+def find_accessory_status(messages: tuple[DecodedMqttMessage, ...]) -> AccessoryStatus:
+    """Find the latest accessory status from decoded MQTT messages."""
+    attachment_type = None
+    plate_type = None
+    version = None
+
+    for decoded_message in messages:
+        payload = decoded_message.payload
+        if not isinstance(payload, dict):
+            continue
+
+        command_type = _optional_int(payload.get("commandType"))
+        if command_type == ACCESSORY_INFO_COMMAND:
+            attachment_type = _optional_int(payload.get("attType"))
+            raw_version = payload.get("version")
+            version = raw_version if isinstance(raw_version, str) else None
+        elif command_type == PLATE_INFO_COMMAND:
+            plate_type = _optional_int(payload.get("plateType"))
+
+    name = _accessory_name(plate_type, attachment_type)
+    return AccessoryStatus(
+        name=name,
+        attachment_type=attachment_type,
+        plate_type=plate_type,
+        version=version,
+    )
+
+
 def parse_ink_status(message: dict[str, Any]) -> InkStatus:
     """Parse a commandType 1100 ink status message."""
     ink = message.get("ink")
@@ -606,3 +658,13 @@ def _optional_bool(value: Any) -> bool | None:
     if parsed is None:
         return None
     return bool(parsed)
+
+
+def _accessory_name(plate_type: int | None, attachment_type: int | None) -> str | None:
+    if plate_type in PLATE_TYPE_NAMES:
+        return PLATE_TYPE_NAMES[plate_type]
+    if attachment_type in ATTACHMENT_TYPE_NAMES:
+        return ATTACHMENT_TYPE_NAMES[attachment_type]
+    if plate_type is not None or attachment_type is not None:
+        return "Unknown accessory"
+    return None

@@ -25,6 +25,7 @@ from .runtime import (
     EufyMakeRuntimeError,
     MqttProbePlan,
     build_probe_plan,
+    find_accessory_status,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return _data_from_live_result(
             result.ink_status,
+            decoded_messages=result.decoded_messages,
             firmware_version=plan.device.firmware_version,
             mqtt_online=True,
             p2p_online=None,
@@ -89,6 +91,7 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
 def _data_from_live_result(
     ink_status: Any,
     *,
+    decoded_messages: tuple[Any, ...] = (),
     firmware_version: str | None,
     mqtt_online: bool | None,
     p2p_online: bool | None,
@@ -111,10 +114,18 @@ def _data_from_live_result(
             waste_ink = ink_status.waste_tank.remaining_percent
             waste_ink_details = _ink_channel_attributes(ink_status.waste_tank)
 
+    accessory_status = find_accessory_status(decoded_messages)
+
     return {
         "availability": "online" if ink_status is not None else "unknown",
         "print_status": None,
         "firmware_version": firmware_version,
+        "current_accessory": accessory_status.name,
+        "current_accessory_details": {
+            "attachment_type": accessory_status.attachment_type,
+            "plate_type": accessory_status.plate_type,
+            "version": accessory_status.version,
+        },
         "mqtt_online": mqtt_online,
         "p2p_online": p2p_online,
         "ink": ink,

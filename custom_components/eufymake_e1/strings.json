@@ -52,6 +52,9 @@
       "firmware_version": {
         "name": "Firmware version"
       },
+      "current_accessory": {
+        "name": "Current accessory"
+      },
       "waste_ink": {
         "name": "Waste ink"
       },

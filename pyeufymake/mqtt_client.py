@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import ssl
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
-from typing import Any
+from typing import Any, Callable
 
 from .ink import InkStatus, find_ink_status
 from .mqtt_probe import MqttProbePlan
@@ -64,6 +65,8 @@ class EufyMakeMqttStatusClient:
         *,
         timeout: float = 25,
         publish_variant: str = "cbc",
+        listen_after_ink: float = 0,
+        on_decoded_message: Callable[[DecodedMqttMessage], None] | None = None,
     ) -> MqttStatusResult:
         """Connect, request status, and wait for an ink status message."""
         try:
@@ -78,6 +81,7 @@ class EufyMakeMqttStatusClient:
             "decoded": 0,
             "undecoded": 0,
             "ink_status": None,
+            "ink_seen_at": None,
             "error": None,
         }
 
@@ -126,11 +130,16 @@ class EufyMakeMqttStatusClient:
                 command_type=_command_type(payload),
             )
             decoded_messages.append(decoded_message)
+            if on_decoded_message is not None:
+                on_decoded_message(decoded_message)
 
             ink_status = find_ink_status(payload)
             if ink_status is not None:
                 state["ink_status"] = ink_status
-                done.set()
+                if state["ink_seen_at"] is None:
+                    state["ink_seen_at"] = time.monotonic()
+                if listen_after_ink <= 0:
+                    done.set()
 
         def on_disconnect(
             client: Any,
@@ -149,16 +158,26 @@ class EufyMakeMqttStatusClient:
         client.on_disconnect = on_disconnect
 
         try:
-            client.connect(self.plan.host, self.plan.port, keepalive=1)
+            client.connect(self.plan.host, self.plan.port, keepalive=30)
             client.loop_start()
-            done.wait(timeout)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if done.wait(0.2):
+                    break
+                ink_seen_at = state["ink_seen_at"]
+                if (
+                    ink_seen_at is not None
+                    and listen_after_ink > 0
+                    and time.monotonic() - float(ink_seen_at) >= listen_after_ink
+                ):
+                    break
         except Exception as err:
             raise EufyMakeMqttClientError(f"MQTT probe failed: {err}") from err
         finally:
             client.loop_stop()
             client.disconnect()
 
-        if state["error"]:
+        if state["error"] and not decoded_messages:
             raise EufyMakeMqttClientError(str(state["error"]))
 
         return MqttStatusResult(
