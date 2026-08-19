@@ -27,68 +27,80 @@ class EufyMakeSensorDescription(SensorEntityDescription):
 SENSORS: tuple[EufyMakeSensorDescription, ...] = (
     EufyMakeSensorDescription(
         key="availability",
+        name="Availability",
         translation_key="availability",
         value_fn=lambda data: data.get("availability"),
     ),
     EufyMakeSensorDescription(
         key="print_status",
+        name="Print status",
         translation_key="print_status",
         value_fn=lambda data: data.get("print_status"),
     ),
     EufyMakeSensorDescription(
         key="firmware_version",
+        name="Firmware version",
         translation_key="firmware_version",
         value_fn=lambda data: data.get("firmware_version"),
     ),
     EufyMakeSensorDescription(
         key="waste_ink",
+        name="Waste ink",
         translation_key="waste_ink",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: data.get("waste_ink"),
     ),
     EufyMakeSensorDescription(
         key="ink_c",
+        name="Cyan ink",
         translation_key="ink_c",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "C"),
     ),
     EufyMakeSensorDescription(
         key="ink_m",
+        name="Magenta ink",
         translation_key="ink_m",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "M"),
     ),
     EufyMakeSensorDescription(
         key="ink_y",
+        name="Yellow ink",
         translation_key="ink_y",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "Y"),
     ),
     EufyMakeSensorDescription(
         key="ink_k",
+        name="Black ink",
         translation_key="ink_k",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "K"),
     ),
     EufyMakeSensorDescription(
         key="ink_w",
+        name="White ink",
         translation_key="ink_w",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "W"),
     ),
     EufyMakeSensorDescription(
         key="ink_g",
+        name="Gloss ink",
         translation_key="ink_g",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda data: _ink_value(data, "G"),
     ),
     EufyMakeSensorDescription(
         key="mqtt_online",
+        name="MQTT online",
         translation_key="mqtt_online",
         value_fn=lambda data: data.get("mqtt_online"),
     ),
     EufyMakeSensorDescription(
         key="p2p_online",
+        name="P2P online",
         translation_key="p2p_online",
         value_fn=lambda data: data.get("p2p_online"),
     ),
@@ -127,6 +139,7 @@ class EufyMakeE1Sensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
         super().__init__(coordinator)
         device_sn = entry.data[CONF_DEVICE_SN]
         self.entity_description = description
+        self._attr_has_entity_name = True
         self._attr_unique_id = f"{device_sn}_{description.key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, device_sn)},
@@ -158,6 +171,7 @@ class EufyMakeE1PartSensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntit
         key = part.get("key") or _slug(str(part.get("name") or "part"))
         name = part.get("name") or key
         self._part_key = key
+        self._attr_has_entity_name = True
         self._attr_name = name
         self._attr_unique_id = f"{device_sn}_part_{key}"
         self._attr_device_info = {
