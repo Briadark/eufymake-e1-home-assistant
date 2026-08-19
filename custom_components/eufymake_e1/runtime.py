@@ -238,7 +238,12 @@ class EufyMakeMqttStatusClient:
             raise EufyMakeRuntimeError("Cached E1 secret key is unavailable")
         self.plan = plan
 
-    def fetch_once(self, *, timeout: float = 25) -> MqttStatusResult:
+    def fetch_once(
+        self,
+        *,
+        timeout: float = 25,
+        listen_after_ink: float = 0,
+    ) -> MqttStatusResult:
         """Connect, request status, and wait for an ink status message."""
         try:
             import paho.mqtt.client as mqtt
@@ -252,6 +257,7 @@ class EufyMakeMqttStatusClient:
             "decoded": 0,
             "undecoded": 0,
             "ink_status": None,
+            "ink_seen_at": None,
             "error": None,
         }
 
@@ -302,7 +308,10 @@ class EufyMakeMqttStatusClient:
             ink_status = find_ink_status(payload)
             if ink_status is not None:
                 state["ink_status"] = ink_status
-                done.set()
+                if state["ink_seen_at"] is None:
+                    state["ink_seen_at"] = time.monotonic()
+                if listen_after_ink <= 0:
+                    done.set()
 
         def on_disconnect(
             client: Any,
@@ -323,7 +332,17 @@ class EufyMakeMqttStatusClient:
         try:
             client.connect(self.plan.host, self.plan.port, keepalive=30)
             client.loop_start()
-            done.wait(timeout)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if done.wait(0.2):
+                    break
+                ink_seen_at = state["ink_seen_at"]
+                if (
+                    ink_seen_at is not None
+                    and listen_after_ink > 0
+                    and time.monotonic() - float(ink_seen_at) >= listen_after_ink
+                ):
+                    break
         except Exception as err:
             raise EufyMakeRuntimeError(f"MQTT probe failed: {err}") from err
         finally:

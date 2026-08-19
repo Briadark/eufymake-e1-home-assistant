@@ -53,17 +53,22 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Load live data from manually configured MQTT fields."""
         plan = self._manual_probe_plan()
         try:
-            result = EufyMakeMqttStatusClient(plan).fetch_once(timeout=25)
+            result = EufyMakeMqttStatusClient(plan).fetch_once(
+                timeout=25,
+                listen_after_ink=5,
+            )
         except EufyMakeRuntimeError as err:
             raise UpdateFailed(str(err)) from err
 
-        return _data_from_live_result(
+        data = _data_from_live_result(
             result.ink_status,
             decoded_messages=result.decoded_messages,
             firmware_version=plan.device.firmware_version,
             mqtt_online=True,
             p2p_online=None,
         )
+        _preserve_previous_accessory(data, self.data)
+        return data
 
     def _manual_probe_plan(self) -> MqttProbePlan:
         """Build a probe plan from config entry data."""
@@ -153,6 +158,23 @@ def _ink_channel_attributes(channel: Any) -> dict[str, Any]:
         ),
         "expired": getattr(channel, "expired", None),
     }
+
+
+def _preserve_previous_accessory(
+    data: dict[str, Any],
+    previous_data: dict[str, Any] | None,
+) -> None:
+    """Keep the last known accessory when a poll lacks accessory packets."""
+    if data.get("current_accessory") is not None or not previous_data:
+        return
+    previous_accessory = previous_data.get("current_accessory")
+    if previous_accessory is None:
+        return
+    data["current_accessory"] = previous_accessory
+    previous_details = previous_data.get("current_accessory_details", {})
+    data["current_accessory_details"] = (
+        previous_details if isinstance(previous_details, dict) else {}
+    )
 
 
 def _date_from_timestamp(timestamp: int | None) -> str | None:

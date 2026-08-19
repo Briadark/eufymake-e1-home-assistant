@@ -202,6 +202,41 @@ def test_runtime_accessory_status_maps_roll_to_film() -> None:
     assert status.version == "V1.1.16"
 
 
+def test_coordinator_preserves_previous_accessory_when_poll_lacks_accessory_packets() -> None:
+    _stub_homeassistant()
+    coordinator = _load_module(
+        "custom_components.eufymake_e1.coordinator",
+        COMPONENT_DIR / "coordinator.py",
+    )
+
+    data = {
+        "current_accessory": None,
+        "current_accessory_details": {
+            "attachment_type": None,
+            "plate_type": None,
+            "version": None,
+        },
+    }
+    coordinator._preserve_previous_accessory(
+        data,
+        {
+            "current_accessory": "Roll-to-Film Attachment",
+            "current_accessory_details": {
+                "attachment_type": 3,
+                "plate_type": 4,
+                "version": "V1.1.16",
+            },
+        },
+    )
+
+    assert data["current_accessory"] == "Roll-to-Film Attachment"
+    assert data["current_accessory_details"] == {
+        "attachment_type": 3,
+        "plate_type": 4,
+        "version": "V1.1.16",
+    }
+
+
 def _load_real_const():
     return _load_module(
         "custom_components.eufymake_e1.const",
