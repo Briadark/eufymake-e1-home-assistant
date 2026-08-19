@@ -1,0 +1,17 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "station_sn": "AKTESTE100000001",
+      "part_key": "waste_ink",
+      "part_name": "Waste Ink Tank",
+      "remaining_percent": 55,
+      "remaining_work_life": "2383H",
+      "maintenance": false,
+      "support_reset": 1
+    }
+  ],
+  "msg": "Succeed.",
+  "signature": "fixture"
+}
+

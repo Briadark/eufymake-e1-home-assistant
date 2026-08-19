@@ -1,0 +1,33 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "station_sn": "AKTESTE100000001",
+      "secret_key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "station_model": "V8260",
+      "sku_number": "V8260G40",
+      "product_name": "eufyMake E1",
+      "product_region": "EU",
+      "main_sw_version": "4.0.2",
+      "main_hw_version": "V9.0.0",
+      "ip_addr": "192.0.2.10",
+      "mqtt_status": 1,
+      "p2p_status": 0,
+      "is_query": true,
+      "is_command": true,
+      "is_camera": true,
+      "params": [
+        {
+          "param_type": 10028,
+          "param_value": "1"
+        },
+        {
+          "param_type": 10029,
+          "param_value": "0"
+        }
+      ]
+    }
+  ],
+  "msg": "Succeed.",
+  "signature": "fixture"
+}

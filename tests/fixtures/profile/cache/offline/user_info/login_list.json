@@ -1,0 +1,11 @@
+{
+  "login_data": {
+    "action": "command_update_login_data",
+    "data": {
+      "geo_key": "fixture-geo-key",
+      "domain": "make-app-eu.ankermake.com",
+      "makeItRealDomain": "aiot-api-eu.ankermake.com"
+    }
+  },
+  "cache_time": 1893456000
+}

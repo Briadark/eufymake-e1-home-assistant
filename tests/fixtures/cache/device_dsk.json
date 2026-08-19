@@ -1,0 +1,16 @@
+{
+  "code": 0,
+  "data": {
+    "enabled": true,
+    "dsk_keys": [
+      {
+        "station_sn": "AKTESTE100000001",
+        "dsk_key": "fixture-secret",
+        "expiration": 1893456000
+      }
+    ]
+  },
+  "msg": "Succeed.",
+  "signature": "fixture"
+}
+

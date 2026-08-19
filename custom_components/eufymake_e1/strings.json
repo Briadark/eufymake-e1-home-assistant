@@ -1,0 +1,62 @@
+{
+  "title": "eufyMake E1",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect eufyMake E1",
+        "data": {
+          "setup_export": "Setup export JSON"
+        },
+        "data_description": {
+          "setup_export": "Run tools/export_home_assistant_setup.py on the Windows machine with eufyMake Studio installed, then paste the JSON here."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This eufyMake E1 is already configured."
+    },
+    "error": {
+      "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "availability": {
+        "name": "Availability"
+      },
+      "print_status": {
+        "name": "Print status"
+      },
+      "firmware_version": {
+        "name": "Firmware version"
+      },
+      "waste_ink": {
+        "name": "Waste ink"
+      },
+      "ink_c": {
+        "name": "Cyan ink"
+      },
+      "ink_m": {
+        "name": "Magenta ink"
+      },
+      "ink_y": {
+        "name": "Yellow ink"
+      },
+      "ink_k": {
+        "name": "Black ink"
+      },
+      "ink_w": {
+        "name": "White ink"
+      },
+      "ink_g": {
+        "name": "Gloss ink"
+      },
+      "mqtt_online": {
+        "name": "MQTT online"
+      },
+      "p2p_online": {
+        "name": "P2P online"
+      }
+    }
+  }
+}

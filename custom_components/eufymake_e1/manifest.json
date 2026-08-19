@@ -1,0 +1,11 @@
+{
+  "domain": "eufymake_e1",
+  "name": "eufyMake E1",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/briadark/eufymake-e1-home-assistant",
+  "integration_type": "device",
+  "iot_class": "cloud_poll",
+  "requirements": ["paho-mqtt>=2.1.0", "cryptography>=42.0.0"],
+  "version": "0.1.0"
+}

@@ -1,0 +1,15 @@
+{
+  "functionName": "loginback",
+  "callbackName": null,
+  "data": {
+    "user_id": "fixture-user",
+    "email": "fixture%40example.com",
+    "auth_token": "fixture-token",
+    "token_expires_at": 1893456000,
+    "domain": "make-app-eu.ankermake.com",
+    "makeItRealDomain": "aiot-api-eu.ankermake.com",
+    "country_code": "NL",
+    "test_flag": 1
+  },
+  "needback": "true"
+}
