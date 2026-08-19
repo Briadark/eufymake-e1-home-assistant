@@ -25,7 +25,8 @@ Supported:
 
 Not supported:
 
-- AnkerMake M5 / eufyMake Studio 3D printer, station model `V8111`
+- AnkerMake M5 / eufyMake Studio 3D printer, station model `V8111`.
+  Support may be added later.
 
 ## Install With HACS
 
@@ -56,6 +57,8 @@ config entry.
 This example uses only built-in Home Assistant cards. If Home Assistant created
 different entity IDs for your printer, replace the entity IDs below with your
 own.
+
+![Dashboard example](docs/dashboard-example.png)
 
 ```yaml
 type: vertical-stack
