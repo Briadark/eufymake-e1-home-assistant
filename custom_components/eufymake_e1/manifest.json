@@ -4,8 +4,9 @@
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/briadark/eufymake-e1-home-assistant",
+  "issue_tracker": "https://github.com/briadark/eufymake-e1-home-assistant/issues",
   "integration_type": "device",
   "iot_class": "cloud_poll",
   "requirements": ["paho-mqtt>=2.1.0", "cryptography>=42.0.0"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
