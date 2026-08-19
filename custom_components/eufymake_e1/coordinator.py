@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
 )
 from .runtime import (
+    ACCESSORY_QUERY_COMMANDS,
     EufyMakeMqttStatusClient,
     EufyMakeRuntimeError,
     MqttProbePlan,
@@ -56,6 +57,10 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             result = EufyMakeMqttStatusClient(plan).fetch_once(
                 timeout=25,
                 listen_after_ink=5,
+                query_payloads=(
+                    plan.status_query,
+                    *ACCESSORY_QUERY_COMMANDS,
+                ),
             )
         except EufyMakeRuntimeError as err:
             raise UpdateFailed(str(err)) from err

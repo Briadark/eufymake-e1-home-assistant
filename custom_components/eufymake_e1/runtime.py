@@ -23,6 +23,10 @@ PACKET_TYPE_SINGLE = 0xC0
 STATUS_QUERY_COMMAND = {"commandType": 1027, "value": 0}
 ACCESSORY_INFO_COMMAND = 1153
 PLATE_INFO_COMMAND = 1118
+ACCESSORY_QUERY_COMMANDS = (
+    {"commandType": PLATE_INFO_COMMAND},
+    {"commandType": ACCESSORY_INFO_COMMAND},
+)
 PLATE_TYPE_NAMES = {
     0: "Mini Flatbed",
     1: "Standard Flatbed",
@@ -243,6 +247,7 @@ class EufyMakeMqttStatusClient:
         *,
         timeout: float = 25,
         listen_after_ink: float = 0,
+        query_payloads: tuple[dict[str, Any], ...] | None = None,
     ) -> MqttStatusResult:
         """Connect, request status, and wait for an ink status message."""
         try:
@@ -282,11 +287,13 @@ class EufyMakeMqttStatusClient:
                 return
             for topic in self.plan.topics.subscriptions:
                 client.subscribe(topic, qos=0)
-            client.publish(
-                self.plan.topics.query,
-                build_app_frame(self.plan.status_query, self.plan.device.secret_key),
-                qos=0,
-            )
+            payloads = query_payloads or (self.plan.status_query,)
+            for payload in payloads:
+                client.publish(
+                    self.plan.topics.query,
+                    build_app_frame(payload, self.plan.device.secret_key),
+                    qos=0,
+                )
 
         def on_message(client: Any, userdata: Any, message: Any) -> None:
             state["messages"] += 1
@@ -312,6 +319,11 @@ class EufyMakeMqttStatusClient:
                     state["ink_seen_at"] = time.monotonic()
                 if listen_after_ink <= 0:
                     done.set()
+
+            if state["ink_status"] is not None and _has_accessory_status(
+                tuple(decoded_messages)
+            ):
+                done.set()
 
         def on_disconnect(
             client: Any,
@@ -535,6 +547,11 @@ def find_accessory_status(messages: tuple[DecodedMqttMessage, ...]) -> Accessory
         plate_type=plate_type,
         version=version,
     )
+
+
+def _has_accessory_status(messages: tuple[DecodedMqttMessage, ...]) -> bool:
+    status = find_accessory_status(messages)
+    return status.plate_type is not None and status.attachment_type is not None
 
 
 def parse_ink_status(message: dict[str, Any]) -> InkStatus:

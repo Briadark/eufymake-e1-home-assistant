@@ -66,6 +66,8 @@ class EufyMakeMqttStatusClient:
         timeout: float = 25,
         publish_variant: str = "cbc",
         listen_after_ink: float = 0,
+        query_payloads: tuple[dict[str, Any], ...] | None = None,
+        publish_topic: str = "query",
         on_decoded_message: Callable[[DecodedMqttMessage], None] | None = None,
     ) -> MqttStatusResult:
         """Connect, request status, and wait for an ink status message."""
@@ -112,7 +114,9 @@ class EufyMakeMqttStatusClient:
                 return
             for topic in self.plan.topics.subscriptions:
                 client.subscribe(topic, qos=0)
-            self._publish_query(client, publish_variant)
+            payloads = query_payloads or (self.plan.status_query,)
+            for payload in payloads:
+                self._publish_query(client, publish_variant, payload, publish_topic)
 
         def on_message(client: Any, userdata: Any, message: Any) -> None:
             state["messages"] += 1
@@ -188,23 +192,36 @@ class EufyMakeMqttStatusClient:
             decoded_messages=tuple(decoded_messages),
         )
 
-    def _publish_query(self, client: Any, variant: str) -> None:
+    def _publish_query(
+        self,
+        client: Any,
+        variant: str,
+        payload: dict[str, Any],
+        publish_topic: str,
+    ) -> None:
         if variant not in ("cbc", "gcm", "both"):
             raise EufyMakeMqttClientError(f"Unsupported publish variant: {variant}")
+        if publish_topic not in ("query", "command"):
+            raise EufyMakeMqttClientError(f"Unsupported publish topic: {publish_topic}")
         secret_key = self.plan.device.secret_key
         if secret_key is None:
             raise EufyMakeMqttClientError("Cached E1 secret key is unavailable")
+        topic = (
+            self.plan.topics.query
+            if publish_topic == "query"
+            else self.plan.topics.command
+        )
 
         if variant in ("cbc", "both"):
             client.publish(
-                self.plan.topics.query,
-                build_app_frame(self.plan.status_query, secret_key),
+                topic,
+                build_app_frame(payload, secret_key),
                 qos=0,
             )
         if variant in ("gcm", "both"):
             client.publish(
-                self.plan.topics.query,
-                build_gcm_payload(self.plan.status_query, secret_key),
+                topic,
+                build_gcm_payload(payload, secret_key),
                 qos=0,
             )
 

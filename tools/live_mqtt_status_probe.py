@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -85,6 +86,26 @@ def main() -> int:
         default=0,
         help="Keep listening this many seconds after the first ink status.",
     )
+    parser.add_argument(
+        "--query",
+        action="append",
+        help=(
+            "JSON MQTT payload to publish. Can be repeated. "
+            "Defaults to the normal status query."
+        ),
+    )
+    parser.add_argument(
+        "--query-command",
+        action="append",
+        type=int,
+        help="Convenience form for publishing {'commandType': N}. Can be repeated.",
+    )
+    parser.add_argument(
+        "--publish-topic",
+        choices=("query", "command"),
+        default="query",
+        help="MQTT topic family to publish the payload to.",
+    )
     parser.add_argument("--profile-dir", type=Path, default=default_profile_dir())
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--device-sn")
@@ -114,7 +135,12 @@ def main() -> int:
     print(f"  target: {plan.host}:{plan.port}")
     print(f"  station_model: {plan.device.station_model}")
     print(f"  station_sn: {redact_id(plan.device.serial_number)}")
+    query_payloads = _query_payloads(args.query, args.query_command)
+
     print(f"  publish_variant: {args.publish_variant}")
+    print(f"  publish_topic: {args.publish_topic}")
+    if query_payloads is not None:
+        print(f"  query_payloads: {query_payloads}")
     print(f"  ca_file: {args.ca_file if args.ca_file else '<system default>'}")
 
     try:
@@ -122,6 +148,8 @@ def main() -> int:
             timeout=args.timeout,
             publish_variant=args.publish_variant,
             listen_after_ink=args.listen_after_ink,
+            query_payloads=query_payloads,
+            publish_topic=args.publish_topic,
             on_decoded_message=_print_decoded_message,
         )
     except KeyboardInterrupt:
@@ -141,6 +169,24 @@ def main() -> int:
         f"undecoded={result.undecoded})"
     )
     return 1
+
+
+def _query_payloads(
+    raw_queries: list[str] | None,
+    command_types: list[int] | None,
+) -> tuple[dict[str, Any], ...] | None:
+    payloads: list[dict[str, Any]] = []
+    for command_type in command_types or []:
+        payloads.append({"commandType": command_type})
+    for raw_query in raw_queries or []:
+        try:
+            payload = json.loads(raw_query)
+        except json.JSONDecodeError as err:
+            raise SystemExit(f"Invalid --query JSON: {err}") from err
+        if not isinstance(payload, dict):
+            raise SystemExit("--query JSON must be an object")
+        payloads.append(payload)
+    return tuple(payloads) if payloads else None
 
 
 def _print_decoded_message(message: Any) -> None:
