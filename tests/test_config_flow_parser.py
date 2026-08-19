@@ -158,3 +158,19 @@ def test_device_label_includes_suffix_and_firmware() -> None:
     )
 
     assert label == "eufyMake E1 0001 (4.0.2)"
+
+
+def test_captcha_image_uri_converts_base64_png() -> None:
+    module = load_config_flow_module()
+
+    assert module._captcha_image_uri("iVBORw0KGgo=") == (
+        "data:image/png;base64,iVBORw0KGgo="
+    )
+
+
+def test_captcha_image_uri_preserves_data_uri() -> None:
+    module = load_config_flow_module()
+
+    assert module._captcha_image_uri("data:image/png;base64,abc") == (
+        "data:image/png;base64,abc"
+    )

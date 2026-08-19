@@ -118,6 +118,30 @@ def test_desktop_headers_use_native_shape() -> None:
     assert headers["Openudid"] == "fixture-openudid"
 
 
+def test_captcha_required_detection_needs_id_and_image() -> None:
+    module = _load_auth_module()
+
+    assert module._is_captcha_required(
+        100032,
+        {"captcha_id": "captcha-fixture", "item": "image-fixture"},
+    )
+    assert not module._is_captcha_required(100032, {"captcha_id": "captcha-fixture"})
+    assert not module._is_captcha_required(26006, {"captcha_id": "captcha-fixture"})
+
+
+def test_captcha_error_exposes_id_and_image() -> None:
+    module = _load_auth_module()
+
+    err = module.EufyMakeCaptchaRequired(
+        100032,
+        "Failed to request.",
+        {"captcha_id": "captcha-fixture", "item": "image-fixture"},
+    )
+
+    assert err.captcha_id == "captcha-fixture"
+    assert err.item == "image-fixture"
+
+
 def _load_auth_module():
     package = types.ModuleType("custom_components.eufymake_e1")
     package.__path__ = [str(COMPONENT_DIR)]

@@ -5,8 +5,8 @@
       "user": {
         "title": "Connect eufyMake E1",
         "menu_options": {
-          "setup_export": "Paste setup export JSON",
-          "login": "Log in with eufyMake account"
+          "login": "Log in with eufyMake account",
+          "setup_export": "Paste setup export JSON"
         }
       },
       "login": {
@@ -26,13 +26,20 @@
           "device_sn": "Device"
         }
       },
+      "captcha": {
+        "title": "Captcha verification",
+        "description": "Enter the characters shown in the image.\n\n![Captcha]({captcha_image})",
+        "data": {
+          "captcha_answer": "Captcha"
+        }
+      },
       "setup_export": {
         "title": "Connect eufyMake E1 from setup export",
         "data": {
           "setup_export": "Setup export JSON"
         },
         "data_description": {
-          "setup_export": "From the repository folder on the Windows machine where eufyMake Studio is already logged in, run tools/export_home_assistant_setup.py, then paste the JSON here."
+          "setup_export": "Fallback option: from the repository folder on the Windows machine where eufyMake Studio is already logged in, run tools/export_home_assistant_setup.py, then paste the JSON here."
         }
       }
     },
@@ -44,7 +51,7 @@
     },
     "error": {
       "cannot_connect": "Could not connect to eufyMake. Check the country code and try again.",
-      "captcha_required": "eufyMake requested captcha verification. Stop retrying account login for now and use the setup export fallback.",
+      "captcha_required": "Captcha verification failed. Try the new image.",
       "invalid_auth": "The eufyMake login details were rejected.",
       "invalid_setup_export": "The setup export JSON is invalid or does not describe a eufyMake E1.",
       "rate_limited": "eufyMake temporarily rate-limited login attempts. Stop retrying for now and try again later.",

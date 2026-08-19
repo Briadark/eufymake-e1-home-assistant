@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 from functools import partial
 from typing import Any
@@ -25,6 +27,8 @@ from .const import (
     DOMAIN,
 )
 
+CONF_CAPTCHA_ANSWER = "captcha_answer"
+
 _STEP_LOGIN_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_COUNTRY, default="NL"): vol.All(
@@ -46,6 +50,16 @@ _STEP_LOGIN_DATA_SCHEMA = vol.Schema(
     }
 )
 
+_STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_CAPTCHA_ANSWER): TextSelector(
+            TextSelectorConfig(
+                autocomplete="one-time-code",
+            )
+        ),
+    }
+)
+
 _STEP_SETUP_EXPORT_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_SETUP_EXPORT): vol.All(
@@ -60,6 +74,9 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eufyMake E1."""
 
     VERSION = 1
+    _captcha_id: str | None = None
+    _captcha_image: str | None = None
+    _login_input: dict[str, Any] | None = None
     _login_result: Any | None = None
 
     async def async_step_user(
@@ -68,7 +85,7 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         return self.async_show_menu(
             step_id="user",
-            menu_options=["setup_export", "login"],
+            menu_options=["login", "setup_export"],
         )
 
     async def async_step_login(
@@ -79,6 +96,7 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
+                self._login_input = dict(user_input)
                 result = await self.hass.async_add_executor_job(
                     partial(
                         _login,
@@ -87,6 +105,10 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         password=user_input[CONF_PASSWORD],
                     )
                 )
+            except _CaptchaChallenge as err:
+                self._captcha_id = err.captcha_id
+                self._captcha_image = err.image
+                return await self.async_step_captcha()
             except ValueError as err:
                 errors["base"] = str(err)
             else:
@@ -101,6 +123,51 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="login",
             data_schema=_STEP_LOGIN_DATA_SCHEMA,
             errors=errors,
+        )
+
+    async def async_step_captcha(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Handle eufyMake captcha verification."""
+        if self._login_input is None or self._captcha_id is None:
+            return await self.async_step_login()
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                result = await self.hass.async_add_executor_job(
+                    partial(
+                        _login,
+                        country=self._login_input[CONF_COUNTRY],
+                        email=self._login_input[CONF_EMAIL],
+                        password=self._login_input[CONF_PASSWORD],
+                        captcha_id=self._captcha_id,
+                        captcha_answer=user_input[CONF_CAPTCHA_ANSWER],
+                    )
+                )
+            except _CaptchaChallenge as err:
+                self._captcha_id = err.captcha_id
+                self._captcha_image = err.image
+                errors["base"] = "captcha_required"
+            except ValueError as err:
+                errors["base"] = str(err)
+            else:
+                self._login_result = result
+                self._captcha_id = None
+                self._captcha_image = None
+                self._login_input = None
+                if len(result.devices) == 1:
+                    return await self._async_create_entry_from_device(
+                        result.devices[0]
+                    )
+                return await self.async_step_device()
+
+        return self.async_show_form(
+            step_id="captcha",
+            data_schema=_STEP_CAPTCHA_DATA_SCHEMA,
+            errors=errors,
+            description_placeholders={"captcha_image": self._captcha_image or ""},
         )
 
     async def async_step_setup_export(
@@ -176,9 +243,27 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-def _login(*, country: str, email: str, password: str) -> Any:
+class _CaptchaChallenge(ValueError):
+    """Captcha challenge to be rendered by the config flow."""
+
+    def __init__(self, *, captcha_id: str, image: str) -> None:
+        """Initialize captcha challenge details."""
+        super().__init__("captcha_required")
+        self.captcha_id = captcha_id
+        self.image = image
+
+
+def _login(
+    *,
+    country: str,
+    email: str,
+    password: str,
+    captcha_id: str | None = None,
+    captcha_answer: str | None = None,
+) -> Any:
     """Run eufyMake cloud login without importing auth at module import time."""
-    from .auth import EufyMakeApiCodeError, EufyMakeAuthError, EufyMakeCloudAuthClient
+    from .auth import EufyMakeApiCodeError, EufyMakeAuthError, EufyMakeCaptchaRequired
+    from .auth import EufyMakeCloudAuthClient
     from .auth import region_from_country
 
     try:
@@ -189,7 +274,14 @@ def _login(*, country: str, email: str, password: str) -> Any:
         ).login(
             email=email,
             password=password,
+            captcha_id=captcha_id,
+            captcha_answer=captcha_answer,
         )
+    except EufyMakeCaptchaRequired as err:
+        image = _captcha_image_uri(err.item)
+        if err.captcha_id and image:
+            raise _CaptchaChallenge(captcha_id=err.captcha_id, image=image) from err
+        raise ValueError("captcha_required") from err
     except EufyMakeApiCodeError as err:
         if err.code in (26050, 26051, 26054, 26055, 26108, 22008):
             raise ValueError("invalid_auth") from err
@@ -252,3 +344,28 @@ def _parse_setup_export(value: str) -> dict[str, Any]:
 def _region_from_host(host: str) -> str:
     """Infer the region name from the broker host."""
     return "eu" if "-eu." in host else "us"
+
+
+def _captcha_image_uri(item: str) -> str:
+    """Convert eufyMake captcha image data into a URI HA can render."""
+    value = item.strip()
+    if value.startswith(("https://", "http://", "data:image/")):
+        return value
+    if value.startswith("<svg"):
+        encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+        return f"data:image/svg+xml;base64,{encoded}"
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return ""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime_type = "image/png"
+    elif raw.startswith(b"\xff\xd8\xff"):
+        mime_type = "image/jpeg"
+    elif raw.startswith(b"GIF8"):
+        mime_type = "image/gif"
+    elif raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+        mime_type = "image/webp"
+    else:
+        mime_type = "image/png"
+    return f"data:{mime_type};base64,{value}"

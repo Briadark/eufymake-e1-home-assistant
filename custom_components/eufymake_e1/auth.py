@@ -56,6 +56,17 @@ class EufyMakeApiCodeError(EufyMakeAuthError):
         super().__init__(f"API error: code={code} msg={self.message}")
 
 
+class EufyMakeCaptchaRequired(EufyMakeApiCodeError):
+    """Raised when eufyMake requires captcha verification."""
+
+    def __init__(self, code: int | None, message: Any, data: Any = None) -> None:
+        """Initialize the captcha challenge error."""
+        super().__init__(code, message, data)
+        payload = data if isinstance(data, dict) else {}
+        self.captcha_id = str(payload.get("captcha_id") or "")
+        self.item = str(payload.get("item") or "")
+
+
 @dataclass(frozen=True, kw_only=True)
 class EufyMakeSession:
     """Authenticated eufyMake cloud session."""
@@ -101,7 +112,14 @@ class EufyMakeCloudAuthClient:
         self.mqtt_host = REGION_ENDPOINTS[region]["mqtt_host"]
         self.country = country
 
-    def login(self, *, email: str, password: str) -> EufyMakeLoginResult:
+    def login(
+        self,
+        *,
+        email: str,
+        password: str,
+        captcha_id: str | None = None,
+        captcha_answer: str | None = None,
+    ) -> EufyMakeLoginResult:
         """Log in and fetch E1 devices needed for MQTT setup."""
         normalized_email = email.strip().lower()
         session_key = _perform_key_exchange(
@@ -115,8 +133,8 @@ class EufyMakeCloudAuthClient:
             "ab_code": self.country,
             "login_id": "",
             "verify_code": "",
-            "captcha_id": "",
-            "answer": "",
+            "captcha_id": captcha_id or "",
+            "answer": captcha_answer or "",
             "client_secret_info": {"public_key": session_key.public_key_hex},
         }
         response = _post_encrypted(
@@ -136,7 +154,12 @@ class EufyMakeCloudAuthClient:
                 )
             },
         )
-        data = _expect_success(response)
+        try:
+            data = _expect_success(response)
+        except EufyMakeApiCodeError as err:
+            if _is_captcha_required(err.code, err.data):
+                raise EufyMakeCaptchaRequired(err.code, err.message, err.data) from err
+            raise
         if not isinstance(data, dict):
             raise EufyMakeAuthError("Login response data is not an object")
         if _requires_verification(data):
@@ -401,6 +424,15 @@ def _expect_success(response: dict[str, Any]) -> Any:
 def _requires_verification(data: dict[str, Any]) -> bool:
     fa_info = data.get("fa_info")
     return isinstance(fa_info, dict) and _optional_int(fa_info.get("step")) == 26052
+
+
+def _is_captcha_required(code: int | None, data: Any) -> bool:
+    return (
+        code in (100032, 100033)
+        and isinstance(data, dict)
+        and bool(data.get("captcha_id"))
+        and bool(data.get("item"))
+    )
 
 
 def _desktop_headers(country: str, *, openudid: str | None = None) -> dict[str, str]:
