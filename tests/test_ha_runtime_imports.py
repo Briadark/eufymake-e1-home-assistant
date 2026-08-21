@@ -288,6 +288,7 @@ def _stub_homeassistant() -> None:
     homeassistant = types.ModuleType("homeassistant")
     config_entries = types.ModuleType("homeassistant.config_entries")
     core = types.ModuleType("homeassistant.core")
+    exceptions = types.ModuleType("homeassistant.exceptions")
     helpers = types.ModuleType("homeassistant.helpers")
     update_coordinator = types.ModuleType(
         "homeassistant.helpers.update_coordinator"
@@ -297,6 +298,9 @@ def _stub_homeassistant() -> None:
         pass
 
     class HomeAssistant:
+        pass
+
+    class ConfigEntryAuthFailed(Exception):
         pass
 
     class DataUpdateCoordinator:
@@ -311,15 +315,18 @@ def _stub_homeassistant() -> None:
 
     config_entries.ConfigEntry = ConfigEntry
     core.HomeAssistant = HomeAssistant
+    exceptions.ConfigEntryAuthFailed = ConfigEntryAuthFailed
     update_coordinator.DataUpdateCoordinator = DataUpdateCoordinator
     update_coordinator.UpdateFailed = UpdateFailed
     helpers.update_coordinator = update_coordinator
     homeassistant.config_entries = config_entries
     homeassistant.core = core
+    homeassistant.exceptions = exceptions
     homeassistant.helpers = helpers
 
     sys.modules["homeassistant"] = homeassistant
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.core"] = core
+    sys.modules["homeassistant.exceptions"] = exceptions
     sys.modules["homeassistant.helpers"] = helpers
     sys.modules["homeassistant.helpers.update_coordinator"] = update_coordinator

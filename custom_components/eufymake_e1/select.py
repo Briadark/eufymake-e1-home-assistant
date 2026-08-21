@@ -13,6 +13,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_DEVICE_SN, DOMAIN
 from .coordinator import EufyMakeE1Coordinator, PURIFIER_DELAY_VALUES
 from .coordinator import PURIFIER_MODE_VALUES
+from .device_info import p1_device_info
 
 PURIFIER_DELAY_OPTIONS = {
     "Immediately": 0,
@@ -54,9 +55,10 @@ class EufyMakeP1ModeSelect(
         """Initialize the P1 mode selector."""
         super().__init__(coordinator)
         e1_sn = entry.data[CONF_DEVICE_SN]
+        purifier = _purifier(coordinator.data or {})
         purifier_sn = _purifier_sn(coordinator, e1_sn)
         self._attr_unique_id = f"{purifier_sn}_mode"
-        self._attr_device_info = _purifier_device_info(purifier_sn, e1_sn)
+        self._attr_device_info = p1_device_info(purifier, fallback_e1_sn=e1_sn)
 
     @property
     def current_option(self) -> str | None:
@@ -86,9 +88,10 @@ class EufyMakeP1DelaySelect(
         """Initialize the P1 delay selector."""
         super().__init__(coordinator)
         e1_sn = entry.data[CONF_DEVICE_SN]
+        purifier = _purifier(coordinator.data or {})
         purifier_sn = _purifier_sn(coordinator, e1_sn)
         self._attr_unique_id = f"{purifier_sn}_delay_off"
-        self._attr_device_info = _purifier_device_info(purifier_sn, e1_sn)
+        self._attr_device_info = p1_device_info(purifier, fallback_e1_sn=e1_sn)
 
     @property
     def current_option(self) -> str | None:
@@ -119,16 +122,6 @@ def _purifier_state(data: dict[str, Any]) -> dict[str, Any]:
 def _purifier_sn(coordinator: EufyMakeE1Coordinator, fallback_e1_sn: str) -> str:
     purifier = _purifier(coordinator.data or {})
     return str(purifier.get("serial_number") or f"{fallback_e1_sn}_purifier_p1")
-
-
-def _purifier_device_info(purifier_sn: str, e1_sn: str) -> dict[str, Any]:
-    return {
-        "identifiers": {(DOMAIN, purifier_sn)},
-        "manufacturer": "eufyMake",
-        "model": "Purifier P1",
-        "name": "eufyMake Purifier P1",
-        "via_device": (DOMAIN, e1_sn),
-    }
 
 
 def _optional_int(value: Any) -> int | None:

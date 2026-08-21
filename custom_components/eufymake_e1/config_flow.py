@@ -30,29 +30,43 @@ from .const import (
 from .countries import COUNTRY_OPTIONS
 
 CONF_CAPTCHA_ANSWER = "captcha_answer"
+DEFAULT_COUNTRY = "NL"
+COUNTRY_CODES = {option["value"] for option in COUNTRY_OPTIONS}
 
-_STEP_LOGIN_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_COUNTRY, default="NL"): SelectSelector(
-            SelectSelectorConfig(
-                options=COUNTRY_OPTIONS,
-                mode=SelectSelectorMode.DROPDOWN,
-            )
-        ),
-        vol.Required(CONF_EMAIL): TextSelector(
-            TextSelectorConfig(
-                type=TextSelectorType.EMAIL,
-                autocomplete="username",
-            )
-        ),
-        vol.Required(CONF_PASSWORD): TextSelector(
-            TextSelectorConfig(
-                type=TextSelectorType.PASSWORD,
-                autocomplete="current-password",
-            )
-        ),
-    }
-)
+
+def _login_data_schema(
+    *,
+    default_country: str = DEFAULT_COUNTRY,
+    default_email: str | None = None,
+) -> vol.Schema:
+    """Return the login schema with context-aware defaults."""
+    email_key = vol.Required(CONF_EMAIL)
+    if default_email:
+        email_key = vol.Required(CONF_EMAIL, default=default_email)
+
+    return vol.Schema(
+        {
+            vol.Required(CONF_COUNTRY, default=default_country): SelectSelector(
+                SelectSelectorConfig(
+                    options=COUNTRY_OPTIONS,
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            email_key: TextSelector(
+                TextSelectorConfig(
+                    type=TextSelectorType.EMAIL,
+                    autocomplete="username",
+                )
+            ),
+            vol.Required(CONF_PASSWORD): TextSelector(
+                TextSelectorConfig(
+                    type=TextSelectorType.PASSWORD,
+                    autocomplete="current-password",
+                )
+            ),
+        }
+    )
+
 
 _STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
     {
@@ -60,9 +74,10 @@ _STEP_CAPTCHA_DATA_SCHEMA = vol.Schema(
             TextSelectorConfig(
                 autocomplete="one-time-code",
             )
-        ),
+        )
     }
 )
+
 
 class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for eufyMake E1."""
@@ -70,6 +85,8 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     _captcha_id: str | None = None
     _captcha_image: str | None = None
+    _login_default_country: str | None = None
+    _login_default_email: str | None = None
     _login_input: dict[str, Any] | None = None
     _login_result: Any | None = None
 
@@ -77,6 +94,8 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Handle the initial step."""
+        if user_input is None:
+            self._set_login_defaults(country=_home_assistant_country(self.hass))
         return await self.async_step_login(user_input)
 
     async def async_step_login(
@@ -107,7 +126,10 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="login",
-            data_schema=_STEP_LOGIN_DATA_SCHEMA,
+            data_schema=_login_data_schema(
+                default_country=self._current_default_country(),
+                default_email=self._current_default_email(),
+            ),
             errors=errors,
         )
 
@@ -156,6 +178,8 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         user_input: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Refresh login/session data for an existing config entry."""
+        if user_input is None:
+            self._set_login_defaults_from_entry(self._get_reconfigure_entry())
         return await self.async_step_login(user_input)
 
     async def async_step_reauth(
@@ -163,6 +187,10 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Handle expired or rejected eufyMake cloud credentials."""
+        self._set_login_defaults(
+            country=entry_data.get(CONF_COUNTRY),
+            email=entry_data.get(CONF_EMAIL),
+        )
         return await self.async_step_login()
 
     async def async_step_device(
@@ -247,6 +275,43 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_updates=data,
         )
 
+    def _set_login_defaults_from_entry(
+        self,
+        entry: config_entries.ConfigEntry,
+    ) -> None:
+        """Set login form defaults from a config entry."""
+        self._set_login_defaults(
+            country=entry.data.get(CONF_COUNTRY),
+            email=entry.data.get(CONF_EMAIL),
+        )
+
+    def _set_login_defaults(
+        self,
+        *,
+        country: Any = None,
+        email: Any = None,
+    ) -> None:
+        """Set sanitized defaults for the login form."""
+        if default_country := _valid_country(country):
+            self._login_default_country = default_country
+        if isinstance(email, str) and email:
+            self._login_default_email = email
+
+    def _current_default_country(self) -> str:
+        """Return the best country default for the login form."""
+        if self._login_input:
+            if country := _valid_country(self._login_input.get(CONF_COUNTRY)):
+                return country
+        return self._login_default_country or DEFAULT_COUNTRY
+
+    def _current_default_email(self) -> str | None:
+        """Return the best email default for the login form."""
+        if self._login_input:
+            email = self._login_input.get(CONF_EMAIL)
+            if isinstance(email, str) and email:
+                return email
+        return self._login_default_email
+
 
 class _CaptchaChallenge(ValueError):
     """Captcha challenge to be rendered by the config flow."""
@@ -302,6 +367,21 @@ def _login(
         if "code=100006" in message or "password" in message.lower():
             raise ValueError("invalid_auth") from err
         raise ValueError("cannot_connect") from err
+
+
+def _home_assistant_country(hass: Any) -> str:
+    """Return Home Assistant's configured country when it is supported."""
+    return _valid_country(getattr(hass.config, "country", None)) or DEFAULT_COUNTRY
+
+
+def _valid_country(country: Any) -> str | None:
+    """Return a normalized supported country code."""
+    if not isinstance(country, str):
+        return None
+    country_code = country.strip().upper()
+    if country_code in COUNTRY_CODES:
+        return country_code
+    return None
 
 
 def _device_label(device: dict[str, Any]) -> str:

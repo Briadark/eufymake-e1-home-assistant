@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_DEVICE_SN, DOMAIN
 from .coordinator import EufyMakeE1Coordinator
+from .device_info import e1_device_info, p1_device_info
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -346,12 +347,7 @@ class EufyMakeE1Sensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
         self.entity_description = description
         self._attr_has_entity_name = True
         self._attr_unique_id = f"{device_sn}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_sn)},
-            "manufacturer": "eufyMake",
-            "model": "E1",
-            "name": "eufyMake E1",
-        }
+        self._attr_device_info = e1_device_info(entry, coordinator.data)
 
     @property
     def native_value(self) -> Any:
@@ -388,12 +384,7 @@ class EufyMakeE1PartSensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntit
         self._attr_has_entity_name = True
         self._attr_name = name
         self._attr_unique_id = f"{device_sn}_part_{key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_sn)},
-            "manufacturer": "eufyMake",
-            "model": "E1",
-            "name": "eufyMake E1",
-        }
+        self._attr_device_info = e1_device_info(entry, coordinator.data)
 
     @property
     def native_value(self) -> Any:
@@ -435,13 +426,7 @@ class EufyMakeP1Sensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
         self.entity_description = description
         self._attr_has_entity_name = True
         self._attr_unique_id = f"{purifier_sn}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, purifier_sn)},
-            "manufacturer": "eufyMake",
-            "model": "Purifier P1",
-            "name": "eufyMake Purifier P1",
-            "via_device": (DOMAIN, e1_sn),
-        }
+        self._attr_device_info = p1_device_info(purifier, fallback_e1_sn=e1_sn)
 
     @property
     def native_value(self) -> Any:

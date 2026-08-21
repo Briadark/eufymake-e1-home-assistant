@@ -70,6 +70,8 @@ def load_config_flow_module():
         return args
 
     config_entries.ConfigFlow = ConfigFlow
+    config_entries.SOURCE_REAUTH = "reauth"
+    config_entries.SOURCE_RECONFIGURE = "reconfigure"
     const.CONF_COUNTRY = "country"
     const.CONF_DEVICE_SN = "device_sn"
     const.CONF_EMAIL = "email"

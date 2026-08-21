@@ -14,8 +14,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
-from .const import CONF_APP_DOMAIN, CONF_AUTH_TOKEN, CONF_COUNTRY, CONF_DEVICE_SN
-from .const import CONF_EMAIL, CONF_FIRMWARE_VERSION
+from .const import CONF_APP_DOMAIN, CONF_AUTH_TOKEN, CONF_COUNTRY, CONF_DEVICE_MODEL
+from .const import CONF_DEVICE_SN
+from .const import CONF_EMAIL, CONF_FIRMWARE_VERSION, CONF_HARDWARE_VERSION
 from .const import CONF_MQTT_HOST, CONF_REGION, CONF_SECRET_KEY, CONF_USER_ID
 from .const import REGION_EU, REGION_US, US_REGION_COUNTRIES
 from .const import CONF_TOKEN_EXPIRES_AT
@@ -244,6 +245,7 @@ def build_setup_from_login_device(
         CONF_AUTH_TOKEN: session.auth_token,
         CONF_COUNTRY: session.country,
         CONF_REGION: session.region,
+        CONF_DEVICE_MODEL: str(device.get("station_model") or "V8260"),
         CONF_DEVICE_SN: serial_number,
         CONF_USER_ID: session.user_id,
         CONF_EMAIL: unquote(session.email),
@@ -254,6 +256,8 @@ def build_setup_from_login_device(
         data[CONF_TOKEN_EXPIRES_AT] = session.token_expires_at
     if device.get("main_sw_version"):
         data[CONF_FIRMWARE_VERSION] = str(device["main_sw_version"])
+    if device.get("main_hw_version"):
+        data[CONF_HARDWARE_VERSION] = str(device["main_hw_version"])
     return data
 
 

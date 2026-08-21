@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from datetime import timedelta
 import json
@@ -153,8 +154,10 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             PURIFIER_MODE_VALUES[mode],
             delay,
         )
-        self._purifier_loaded_at = 0
-        await self.async_request_refresh()
+        self._async_update_purifier_state(
+            mode=PURIFIER_MODE_VALUES[mode],
+            delay=delay,
+        )
 
     async def async_set_purifier_delay(self, delay: int) -> None:
         """Set the linked P1 Auto delay-off seconds."""
@@ -165,8 +168,10 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             PURIFIER_MODE_VALUES["Auto"],
             delay,
         )
-        self._purifier_loaded_at = 0
-        await self.async_request_refresh()
+        self._async_update_purifier_state(
+            mode=PURIFIER_MODE_VALUES["Auto"],
+            delay=delay,
+        )
 
     def _send_purifier_command(self, mode: int, delay: int) -> None:
         """Send a linked P1 MQTT command."""
@@ -195,6 +200,26 @@ class EufyMakeE1Coordinator(DataUpdateCoordinator[dict[str, Any]]):
             },
             expected_command_type=PURIFIER_MODE_COMMAND,
         )
+
+    def _async_update_purifier_state(self, *, mode: int, delay: int) -> None:
+        """Optimistically update P1 state after a successful MQTT command."""
+        purifier = deepcopy(
+            self._purifier_data
+            or _previous_purifier_data(self.data)
+            or {"state": {}}
+        )
+        state = purifier.get("state")
+        if not isinstance(state, dict):
+            state = {}
+        state["work_mode"] = mode
+        state["delay"] = delay
+        purifier["state"] = state
+        self._purifier_data = purifier
+        self._purifier_loaded_at = time.monotonic()
+
+        data = deepcopy(self.data) if isinstance(self.data, dict) else {}
+        data["purifier"] = purifier
+        self.async_set_updated_data(data)
 
 
 def _data_from_live_result(
@@ -438,6 +463,7 @@ def _purifier_data(accessory: dict[str, Any]) -> dict[str, Any]:
             or "T5216"
         ),
         "firmware_version": str(accessory.get("main_sw_version") or ""),
+        "hardware_version": str(accessory.get("main_hw_version") or ""),
         "online": _optional_bool(accessory.get("mqtt_status")),
         "status": _optional_int(accessory.get("status")),
         "state": state,

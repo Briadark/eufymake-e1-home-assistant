@@ -13,6 +13,7 @@ def test_build_setup_from_login_device() -> None:
     module = _load_auth_module()
     session = module.EufyMakeSession(
         region="eu",
+        country="NL",
         app_domain="make-app-eu.ankermake.com",
         mqtt_host="make-mqtt-eu.ankermake.com",
         user_id="fixture-user",
@@ -30,17 +31,24 @@ def test_build_setup_from_login_device() -> None:
             "station_model": "V8260",
             "secret_key": "fixture-secret",
             "main_sw_version": "4.0.2",
+            "main_hw_version": "V9.0.0",
         },
     )
 
     assert setup == {
+        "app_domain": "make-app-eu.ankermake.com",
+        "auth_token": "fixture-token",
+        "country": "NL",
         "region": "eu",
+        "device_model": "V8260",
         "device_sn": "AKTESTE100000001",
         "user_id": "fixture-user",
         "email": "fixture@example.com",
         "secret_key": "fixture-secret",
         "mqtt_host": "make-mqtt-eu.ankermake.com",
+        "token_expires_at": 1893456000,
         "firmware_version": "4.0.2",
+        "hardware_version": "V9.0.0",
     }
 
 
@@ -48,6 +56,7 @@ def test_build_setup_from_login_device_rejects_non_e1() -> None:
     module = _load_auth_module()
     session = module.EufyMakeSession(
         region="eu",
+        country="NL",
         app_domain="make-app-eu.ankermake.com",
         mqtt_host="make-mqtt-eu.ankermake.com",
         user_id="fixture-user",
