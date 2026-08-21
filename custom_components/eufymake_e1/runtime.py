@@ -98,6 +98,7 @@ class MqttTopics:
     query_reply: str
     maker_change_notice: str
     user_change_notice: str
+    command: str
     query: str
 
     @property
@@ -231,6 +232,7 @@ def build_topics(station_sn: str, user_id: str) -> MqttTopics:
         query_reply=f"/phone/maker/{station_sn}/query/reply",
         maker_change_notice=f"/phone/maker/{station_sn}/change_notice",
         user_change_notice=f"/phone/user/{user_id}/change_notice",
+        command=f"/device/maker/{station_sn}/command",
         query=f"/device/maker/{station_sn}/query",
     )
 
@@ -388,6 +390,146 @@ class EufyMakeMqttStatusClient:
             except EufyMakeRuntimeError:
                 pass
         return None
+
+
+class EufyMakeMqttCommandClient:
+    """Send one command to a eufyMake MQTT device and wait for a reply."""
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        station_sn: str,
+        user_id: str,
+        email: str,
+        secret_key: str,
+    ) -> None:
+        """Initialize the command client."""
+        self.host = host
+        self.credentials = MqttCredentials(
+            username=f"eufy_{user_id}",
+            password=unquote(email),
+            client_id=build_client_id(user_id),
+        )
+        self.topics = build_topics(station_sn, user_id)
+        self.secret_key = secret_key
+
+    def send(
+        self,
+        payload: dict[str, Any],
+        *,
+        expected_command_type: int,
+        timeout: float = 15,
+    ) -> tuple[DecodedMqttMessage, ...]:
+        """Publish a command and return decoded reply/state messages."""
+        try:
+            import paho.mqtt.client as mqtt
+        except ImportError as err:
+            raise EufyMakeRuntimeError("paho-mqtt is not installed") from err
+
+        done = Event()
+        decoded_messages: list[DecodedMqttMessage] = []
+        state: dict[str, Any] = {"error": None, "reply": None}
+
+        client = _build_client(mqtt, self.credentials.client_id)
+        client.username_pw_set(
+            self.credentials.username,
+            password=self.credentials.password,
+        )
+        _set_tls(client)
+
+        def on_connect(
+            client: Any,
+            userdata: Any,
+            flags: Any,
+            rc: Any,
+            *extra: Any,
+        ) -> None:
+            code = _reason_code_value(rc)
+            if code != 0:
+                state["error"] = f"MQTT connect failed with code {code}"
+                done.set()
+                return
+            for topic in self.topics.subscriptions:
+                client.subscribe(topic, qos=0)
+            client.publish(
+                self.topics.command,
+                build_app_frame(payload, self.secret_key),
+                qos=0,
+            )
+
+        def on_message(client: Any, userdata: Any, message: Any) -> None:
+            decoded = self._try_decode(message.payload)
+            if decoded is None:
+                return
+            variant, decoded_payload = decoded
+            if not isinstance(decoded_payload, dict):
+                return
+            decoded_message = DecodedMqttMessage(
+                topic=message.topic,
+                variant=variant,
+                payload=decoded_payload,
+                command_type=_command_type(decoded_payload),
+            )
+            decoded_messages.append(decoded_message)
+            if decoded_message.command_type == expected_command_type:
+                state["reply"] = decoded_payload
+            if state["reply"] is not None and _command_reply_ok(state["reply"]):
+                done.set()
+
+        def on_disconnect(
+            client: Any,
+            userdata: Any,
+            disconnect_flags: Any,
+            reason_code: Any,
+            *extra: Any,
+        ) -> None:
+            code = _reason_code_value(reason_code)
+            if code != 0 and not done.is_set():
+                state["error"] = f"MQTT disconnected with code {code}"
+                done.set()
+
+        client.on_connect = on_connect
+        client.on_message = on_message
+        client.on_disconnect = on_disconnect
+
+        try:
+            client.connect(self.host, MQTT_PORT, keepalive=30)
+            client.loop_start()
+            done.wait(timeout)
+        except Exception as err:
+            raise EufyMakeRuntimeError(f"MQTT command failed: {err}") from err
+        finally:
+            client.loop_stop()
+            client.disconnect()
+
+        if state["error"]:
+            raise EufyMakeRuntimeError(str(state["error"]))
+        if state["reply"] is None:
+            raise EufyMakeRuntimeError("No MQTT command reply received")
+        if not _command_reply_ok(state["reply"]):
+            raise EufyMakeRuntimeError(f"MQTT command was rejected: {state['reply']}")
+        return tuple(decoded_messages)
+
+    def _try_decode(self, payload: bytes) -> tuple[str, Any] | None:
+        for variant, decoder in (
+            ("cbc", decrypt_json_frame),
+            ("gcm", decrypt_json_gcm_payload),
+        ):
+            try:
+                return variant, decoder(payload, self.secret_key)
+            except EufyMakeRuntimeError:
+                pass
+        return None
+
+
+def _command_reply_ok(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    try:
+        return int(payload.get("reply")) == 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _set_tls(client: Any) -> None:

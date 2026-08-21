@@ -14,9 +14,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import unquote
 from urllib.request import Request, urlopen
 
-from .const import CONF_DEVICE_SN, CONF_EMAIL, CONF_FIRMWARE_VERSION
+from .const import CONF_APP_DOMAIN, CONF_AUTH_TOKEN, CONF_COUNTRY, CONF_DEVICE_SN
+from .const import CONF_EMAIL, CONF_FIRMWARE_VERSION
 from .const import CONF_MQTT_HOST, CONF_REGION, CONF_SECRET_KEY, CONF_USER_ID
 from .const import REGION_EU, REGION_US, US_REGION_COUNTRIES
+from .const import CONF_TOKEN_EXPIRES_AT
 
 APP_VERSION = "4.2.2"
 ANKERMAKE_APP_NAME = "anker_make"
@@ -72,6 +74,7 @@ class EufyMakeSession:
     """Authenticated eufyMake cloud session."""
 
     region: str
+    country: str
     app_domain: str
     mqtt_host: str
     user_id: str
@@ -180,6 +183,7 @@ class EufyMakeCloudAuthClient:
         )
         session = EufyMakeSession(
             region=self.region,
+            country=self.country,
             app_domain=self.app_domain,
             mqtt_host=self.mqtt_host,
             user_id=user_id,
@@ -236,6 +240,9 @@ def build_setup_from_login_device(
         raise EufyMakeAuthError("Selected device is not a eufyMake E1")
 
     data: dict[str, Any] = {
+        CONF_APP_DOMAIN: session.app_domain,
+        CONF_AUTH_TOKEN: session.auth_token,
+        CONF_COUNTRY: session.country,
         CONF_REGION: session.region,
         CONF_DEVICE_SN: serial_number,
         CONF_USER_ID: session.user_id,
@@ -243,6 +250,8 @@ def build_setup_from_login_device(
         CONF_SECRET_KEY: secret_key,
         CONF_MQTT_HOST: session.mqtt_host,
     }
+    if session.token_expires_at is not None:
+        data[CONF_TOKEN_EXPIRES_AT] = session.token_expires_at
     if device.get("main_sw_version"):
         data[CONF_FIRMWARE_VERSION] = str(device["main_sw_version"])
     return data

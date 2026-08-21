@@ -19,6 +19,13 @@ from pyeufymake.mqtt_protocol import EufyMakeMqttProtocolError
 from pyeufymake.profile import EufyMakeProfileCacheError
 from pyeufymake.redaction import redact
 
+BLOCKED_QUERY_COMMANDS = {
+    1154: (
+        "blocked because it has been observed to trigger an E1 offline/change "
+        "notice during purifier discovery"
+    ),
+}
+
 
 def default_profile_dir() -> Path:
     """Return the default eufyMake Studio profile directory."""
@@ -106,6 +113,11 @@ def main() -> int:
         default="query",
         help="MQTT topic family to publish the payload to.",
     )
+    parser.add_argument(
+        "--allow-risky-query",
+        action="store_true",
+        help="Allow query commands blocked by prior unsafe observations.",
+    )
     parser.add_argument("--profile-dir", type=Path, default=default_profile_dir())
     parser.add_argument("--cache-dir", type=Path)
     parser.add_argument("--device-sn")
@@ -135,7 +147,11 @@ def main() -> int:
     print(f"  target: {plan.host}:{plan.port}")
     print(f"  station_model: {plan.device.station_model}")
     print(f"  station_sn: {redact_id(plan.device.serial_number)}")
-    query_payloads = _query_payloads(args.query, args.query_command)
+    query_payloads = _query_payloads(
+        args.query,
+        args.query_command,
+        allow_risky=args.allow_risky_query,
+    )
 
     print(f"  publish_variant: {args.publish_variant}")
     print(f"  publish_topic: {args.publish_topic}")
@@ -174,9 +190,12 @@ def main() -> int:
 def _query_payloads(
     raw_queries: list[str] | None,
     command_types: list[int] | None,
+    *,
+    allow_risky: bool,
 ) -> tuple[dict[str, Any], ...] | None:
     payloads: list[dict[str, Any]] = []
     for command_type in command_types or []:
+        _check_query_command(command_type, allow_risky=allow_risky)
         payloads.append({"commandType": command_type})
     for raw_query in raw_queries or []:
         try:
@@ -185,8 +204,20 @@ def _query_payloads(
             raise SystemExit(f"Invalid --query JSON: {err}") from err
         if not isinstance(payload, dict):
             raise SystemExit("--query JSON must be an object")
+        command_type = payload.get("commandType")
+        if isinstance(command_type, int):
+            _check_query_command(command_type, allow_risky=allow_risky)
         payloads.append(payload)
     return tuple(payloads) if payloads else None
+
+
+def _check_query_command(command_type: int, *, allow_risky: bool) -> None:
+    reason = BLOCKED_QUERY_COMMANDS.get(command_type)
+    if reason and not allow_risky:
+        raise SystemExit(
+            f"Refusing --query-command {command_type}: {reason}. "
+            "Use --allow-risky-query only for deliberate manual testing."
+        )
 
 
 def _print_decoded_message(message: Any) -> None:

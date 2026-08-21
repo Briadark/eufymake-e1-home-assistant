@@ -31,7 +31,9 @@
       "already_configured": "This eufyMake E1 is already configured.",
       "device_not_found": "The selected eufyMake E1 could not be found.",
       "invalid_device": "The selected device is missing required E1 setup data.",
-      "login_required": "Log in before selecting a device."
+      "login_required": "Log in before selecting a device.",
+      "reauth_successful": "The eufyMake account was reauthenticated.",
+      "reconfigure_successful": "The eufyMake E1 configuration was updated."
     },
     "error": {
       "cannot_connect": "Could not connect to eufyMake. Check the selected country and try again.",

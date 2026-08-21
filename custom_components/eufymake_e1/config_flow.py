@@ -10,6 +10,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import SOURCE_REAUTH, SOURCE_RECONFIGURE
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
@@ -102,12 +103,7 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ValueError as err:
                 errors["base"] = str(err)
             else:
-                self._login_result = result
-                if len(result.devices) == 1:
-                    return await self._async_create_entry_from_device(
-                        result.devices[0]
-                    )
-                return await self.async_step_device()
+                return await self._async_finish_login_result(result)
 
         return self.async_show_form(
             step_id="login",
@@ -143,15 +139,10 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except ValueError as err:
                 errors["base"] = str(err)
             else:
-                self._login_result = result
                 self._captcha_id = None
                 self._captcha_image = None
                 self._login_input = None
-                if len(result.devices) == 1:
-                    return await self._async_create_entry_from_device(
-                        result.devices[0]
-                    )
-                return await self.async_step_device()
+                return await self._async_finish_login_result(result)
 
         return self.async_show_form(
             step_id="captcha",
@@ -159,6 +150,20 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"captcha_image": self._captcha_image or ""},
         )
+
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Refresh login/session data for an existing config entry."""
+        return await self.async_step_login(user_input)
+
+    async def async_step_reauth(
+        self,
+        entry_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Handle expired or rejected eufyMake cloud credentials."""
+        return await self.async_step_login()
 
     async def async_step_device(
         self, user_input: dict[str, Any] | None = None
@@ -188,6 +193,13 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def _async_finish_login_result(self, result: Any) -> dict[str, Any]:
+        """Finish a successful login according to the active flow source."""
+        self._login_result = result
+        if len(result.devices) == 1:
+            return await self._async_create_entry_from_device(result.devices[0])
+        return await self.async_step_device()
+
     async def _async_create_entry_from_device(
         self,
         device: dict[str, Any],
@@ -201,6 +213,16 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = build_setup_from_login_device(self._login_result.session, device)
         except Exception:
             return self.async_abort(reason="invalid_device")
+        if self.source == SOURCE_RECONFIGURE:
+            return await self._async_update_existing_entry(
+                self._get_reconfigure_entry(),
+                data,
+            )
+        if self.source == SOURCE_REAUTH:
+            return await self._async_update_existing_entry(
+                self._get_reauth_entry(),
+                data,
+            )
         return await self._async_create_entry(data)
 
     async def _async_create_entry(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -210,6 +232,19 @@ class EufyMakeE1ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=f"eufyMake E1 {data[CONF_DEVICE_SN][-4:]}",
             data=data,
+        )
+
+    async def _async_update_existing_entry(
+        self,
+        entry: config_entries.ConfigEntry,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update and reload an existing config entry."""
+        await self.async_set_unique_id(data[CONF_DEVICE_SN])
+        self._abort_if_unique_id_mismatch()
+        return self.async_update_reload_and_abort(
+            entry,
+            data_updates=data,
         )
 
 

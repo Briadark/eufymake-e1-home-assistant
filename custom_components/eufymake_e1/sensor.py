@@ -71,6 +71,36 @@ def _accessory_attributes(data: dict[str, Any]) -> dict[str, Any]:
     return attributes if isinstance(attributes, dict) else {}
 
 
+def _purifier(data: dict[str, Any]) -> dict[str, Any]:
+    purifier = data.get("purifier", {})
+    return purifier if isinstance(purifier, dict) else {}
+
+
+def _purifier_state(data: dict[str, Any]) -> dict[str, Any]:
+    state = _purifier(data).get("state", {})
+    return state if isinstance(state, dict) else {}
+
+
+def _purifier_value_fn(key: str) -> Callable[[dict[str, Any]], Any]:
+    return lambda data: _purifier(data).get(key)
+
+
+def _purifier_state_value_fn(key: str) -> Callable[[dict[str, Any]], Any]:
+    return lambda data: _purifier_state(data).get(key)
+
+
+def _purifier_mode(data: dict[str, Any]) -> str | None:
+    return _map_purifier_mode(_purifier_state(data).get("work_mode"))
+
+
+def _purifier_work_status(data: dict[str, Any]) -> str | None:
+    return _map_purifier_work_status(_purifier_state(data).get("work_status"))
+
+
+def _purifier_filter_status(data: dict[str, Any]) -> str | None:
+    return _map_purifier_filter_status(_purifier_state(data).get("filter_status"))
+
+
 def _date_value(attributes: dict[str, Any], key: str) -> date | None:
     value = attributes.get(key)
     if not isinstance(value, str):
@@ -219,6 +249,56 @@ CONNECTIVITY_SENSORS: tuple[EufyMakeSensorDescription, ...] = (
 )
 
 
+PURIFIER_SENSORS: tuple[EufyMakeSensorDescription, ...] = (
+    EufyMakeSensorDescription(
+        key="purifier_online",
+        name="Purifier online",
+        value_fn=_purifier_value_fn("online"),
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_firmware_version",
+        name="Purifier firmware version",
+        value_fn=_purifier_value_fn("firmware_version"),
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_filter_health",
+        name="Purifier filter health",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=_purifier_state_value_fn("filter_health"),
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_filter_lifetime",
+        name="Purifier filter lifetime",
+        native_unit_of_measurement="h",
+        value_fn=_purifier_state_value_fn("filter_lifeTime"),
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_filter_status",
+        name="Purifier filter status",
+        value_fn=_purifier_filter_status,
+        attributes_fn=lambda data: {
+            "raw_filter_status": _purifier_state(data).get("filter_status")
+        },
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_work_mode",
+        name="Purifier mode",
+        value_fn=_purifier_mode,
+        attributes_fn=lambda data: {
+            "raw_work_mode": _purifier_state(data).get("work_mode")
+        },
+    ),
+    EufyMakeSensorDescription(
+        key="purifier_work_status",
+        name="Purifier work status",
+        value_fn=_purifier_work_status,
+        attributes_fn=lambda data: {
+            "raw_work_status": _purifier_state(data).get("work_status")
+        },
+    ),
+)
+
+
 SENSORS: tuple[EufyMakeSensorDescription, ...] = (
     *BASE_SENSORS,
     *INK_SENSORS,
@@ -237,6 +317,11 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         EufyMakeE1Sensor(coordinator, entry, description) for description in SENSORS
     ]
+    if _purifier(coordinator.data or {}):
+        entities.extend(
+            EufyMakeP1Sensor(coordinator, entry, description)
+            for description in PURIFIER_SENSORS
+        )
     entities.extend(
         EufyMakeE1PartSensor(coordinator, entry, part)
         for part in _parts(coordinator)
@@ -331,6 +416,48 @@ class EufyMakeE1PartSensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntit
         return {}
 
 
+class EufyMakeP1Sensor(CoordinatorEntity[EufyMakeE1Coordinator], SensorEntity):
+    """Representation of a linked eufyMake Purifier P1 sensor."""
+
+    entity_description: EufyMakeSensorDescription
+
+    def __init__(
+        self,
+        coordinator: EufyMakeE1Coordinator,
+        entry: ConfigEntry,
+        description: EufyMakeSensorDescription,
+    ) -> None:
+        """Initialize the P1 sensor."""
+        super().__init__(coordinator)
+        e1_sn = entry.data[CONF_DEVICE_SN]
+        purifier = _purifier(coordinator.data or {})
+        purifier_sn = purifier.get("serial_number") or f"{e1_sn}_purifier_p1"
+        self.entity_description = description
+        self._attr_has_entity_name = True
+        self._attr_unique_id = f"{purifier_sn}_{description.key}"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, purifier_sn)},
+            "manufacturer": "eufyMake",
+            "model": "Purifier P1",
+            "name": "eufyMake Purifier P1",
+            "via_device": (DOMAIN, e1_sn),
+        }
+
+    @property
+    def native_value(self) -> Any:
+        """Return the sensor value."""
+        return self.entity_description.value_fn(self.coordinator.data or {})
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return sensor attributes."""
+        if self.entity_description.attributes_fn is None:
+            return {}
+        return _clean_attributes(
+            self.entity_description.attributes_fn(self.coordinator.data or {})
+        )
+
+
 def _parts(coordinator: EufyMakeE1Coordinator) -> list[dict[str, Any]]:
     """Return coordinator part data."""
     data = coordinator.data or {}
@@ -349,3 +476,39 @@ def _clean_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
 def _slug(value: str) -> str:
     """Return a simple entity-safe slug."""
     return "".join(char.lower() if char.isalnum() else "_" for char in value).strip("_")
+
+
+def _map_purifier_mode(value: Any) -> str | None:
+    modes = {
+        0: "Standby",
+        1: "Silent",
+        2: "High",
+        3: "Full power",
+        4: "Auto",
+    }
+    return _map_int(value, modes, "Unknown mode")
+
+
+def _map_purifier_work_status(value: Any) -> str | None:
+    statuses = {
+        0: "Standby",
+        1: "Running",
+    }
+    return _map_int(value, statuses, "Unknown status")
+
+
+def _map_purifier_filter_status(value: Any) -> str | None:
+    statuses = {
+        0: "Normal",
+        1: "Warning",
+        2: "Replace",
+    }
+    return _map_int(value, statuses, "Unknown status")
+
+
+def _map_int(value: Any, mapping: dict[int, str], fallback: str) -> str | None:
+    try:
+        int_value = int(value)
+    except (TypeError, ValueError):
+        return None
+    return mapping.get(int_value, fallback)
